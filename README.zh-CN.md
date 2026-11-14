@@ -74,6 +74,8 @@ macOS 可通过 `ocr:true` 对返回截图执行本地 Vision 识别，窗口观
 
 ## 限制与行为
 
+OCR 仅在窗口捕获模式下补充原生控件。屏幕截图中的文字可能来自覆盖窗口，因此以独立 OCR 区域返回。
+
 - 默认观察 200 个元素，最多 1,000 个。树遍历预算为三秒，未完成时返回 `truncated`。名称和值均有长度上限，原生 provider 阻塞可能超出遍历预算。
 - 截图默认最大宽度 1,440，可设为 320～2,560，高度不超过 2,560。窗口观察默认 `capture_mode:"window"`，macOS 使用 ScreenCaptureKit，Windows 使用 PrintWindow。`capture_mode:"screen"` 采集可见桌面区域及覆盖窗口，桌面模式固定使用 screen。Windows 应用需支持 PrintWindow 渲染，不会自动降级为屏幕截图。截图以 MCP 图片内容返回，不写入磁盘。窗口源缓冲区及 Windows 屏幕区域最多 4,000 万像素。
 - 窗口鼠标输入检查点击、滚动位置及拖动两端实际所属窗口。窗口截图可看到被遮挡内容，但不允许穿透覆盖窗口点击，检查失败返回 `target_obscured`。检查仍可能与外部变化发生竞争。

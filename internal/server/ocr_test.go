@@ -33,6 +33,13 @@ func TestOCRCoordinatesAndNativeNames(t *testing.T) {
 	if r := click(context.Background(), s, ClickArgs{SnapshotID: s.snapshot.ID, ElementID: "row"}); r.err != nil {
 		t.Fatalf("OCR corrupted native identity validation: %v", r.err)
 	}
+	r = observe(context.Background(), s, ObserveArgs{Screenshot: true, OCR: true, CaptureMode: "screen"})
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if len(s.snapshot.OCR) == 0 || s.snapshot.Elements[0].OCRText != "" {
+		t.Fatal("screen text was attributed to a potentially covered AX element")
+	}
 }
 
 func TestOCRRequiresCapabilityAndImage(t *testing.T) {

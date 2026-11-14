@@ -74,6 +74,8 @@ On macOS, `ocr:true` runs local Vision recognition on the returned screenshot (`
 
 ## Limits and behavior
 
+OCR augments native controls only in window capture mode. Screen captures return independent OCR regions, since visible text may belong to an overlapping window.
+
 - Observation defaults to 200 elements; maximum 1,000. Tree traversal has a three-second budget and reports `truncated`. Text values and names are bounded. Provider-specific delays can exceed the traversal budget.
 - Screenshots default to a maximum width of 1,440, configurable from 320 to 2,560; height is capped at 2,560. Window observations default to `capture_mode:"window"` (ScreenCaptureKit on macOS, PrintWindow on Windows). Use `capture_mode:"screen"` for the visible desktop region including overlaps; desktop mode always uses screen capture. Windows applications must support PrintWindow rendering; there is no automatic screen fallback. Screenshots return as MCP image content, not files. Window source buffers and Windows screen regions are capped at 40 million pixels.
 - Window mouse input checks the window under the click/scroll point and both drag endpoints. Seeing an obscured window in a window capture does not permit clicking through its cover; failed checks return `target_obscured`. External changes can still race these checks.

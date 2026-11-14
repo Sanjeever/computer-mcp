@@ -42,7 +42,7 @@ func recognize(ctx context.Context, b desktop.Backend, snap *Snapshot, capture d
 			continue
 		}
 		snap.OCR = append(snap.OCR, region)
-		if best != -1 {
+		if best != -1 && snap.CaptureMode == "window" {
 			snap.Elements[best].OCRText = clip(strings.TrimSpace(snap.Elements[best].OCRText+" "+region.Text), 512)
 		}
 	}
