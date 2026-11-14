@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin-arm64
+          - runner: windows-2022
+            platform: win32-x64
+    runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      CGO_CFLAGS: ${{ matrix.platform == 'darwin-arm64' && '-mmacosx-version-min=14.0' || '' }}
+      CGO_LDFLAGS: ${{ matrix.platform == 'darwin-arm64' && '-mmacosx-version-min=14.0' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm fmt:check
+      - run: pnpm test
+      - run: go test ./...
+      - run: go vet ./...
+      - name: Check Go formatting
+        shell: bash
+        run: test -z "$(gofmt -l cmd internal)"
+      - run: pnpm build
+      - run: pnpm build:native
+      - run: pnpm smoke
+      - run: pnpm pack:platform
+      - run: npm pack --pack-destination artifacts --ignore-scripts
+      - run: pnpm pack:check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ matrix.platform }}
+          path: artifacts/*.tgz
+          if-no-files-found: error

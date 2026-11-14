@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish verified packages and create a GitHub Release (select a version tag)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    if: github.event_name == 'push' || inputs.publish
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-darwin-arm64
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-win32-x64
+          path: artifacts-windows
+      - name: Verify version and collect packages
+        shell: bash
+        run: |
+          version=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" = "v$version"
+          cmp "artifacts/sanjeever-computer-mcp-$version.tgz" "artifacts-windows/sanjeever-computer-mcp-$version.tgz"
+          cp artifacts-windows/*-win32-x64-*.tgz artifacts/
+      - name: Publish native packages, then launcher
+        shell: bash
+        run: |
+          npm publish artifacts/*-darwin-arm64-*.tgz --access public --provenance
+          npm publish artifacts/*-win32-x64-*.tgz --access public --provenance
+          version=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')
+          npm publish "artifacts/sanjeever-computer-mcp-$version.tgz" --access public --provenance
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/*.tgz --verify-tag --generate-notes
