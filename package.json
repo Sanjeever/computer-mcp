@@ -1,0 +1,52 @@
+{
+  "name": "@sanjeever/computer-mcp",
+  "version": "0.1.0",
+  "description": "Native macOS and Windows computer use over stdio MCP",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sanjeever/computer-mcp.git"
+  },
+  "bin": {
+    "computer-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "build:native": "tsx scripts/native.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings src scripts",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "test": "vitest run",
+    "pack:platform": "tsx scripts/platform.ts",
+    "pack:check": "tsx scripts/pack-check.ts",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "esbuild": "0.28.2",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  },
+  "optionalDependencies": {
+    "@sanjeever/computer-mcp-darwin-arm64": "0.1.0",
+    "@sanjeever/computer-mcp-win32-x64": "0.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.20.0"
+}
