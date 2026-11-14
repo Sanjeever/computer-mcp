@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,6 +103,47 @@ func TestSnapshotCoordinatesAndInvalidation(t *testing.T) {
 	requireCode(t, click(ctx, s, ClickArgs{SnapshotID: snap.ID, Point: &p}), "stale_snapshot")
 	if b.inputs != 1 {
 		t.Fatalf("input repeated: %d", b.inputs)
+	}
+}
+
+func TestStaleSnapshotExplainsRecovery(t *testing.T) {
+	for _, reason := range []string{"desktop", "window", "consumed", "expired"} {
+		t.Run(reason, func(t *testing.T) {
+			s, b := setup()
+			ctx := context.Background()
+			if r := observe(ctx, s, ObserveArgs{Screenshot: true}); r.err != nil {
+				t.Fatal(r.err)
+			}
+			id := s.snapshot.ID
+			var want string
+			switch reason {
+			case "desktop":
+				b.displays = []desktop.Display{{ID: "main", Bounds: desktop.Rect{Width: 1000, Height: 500}}}
+				if r := observe(ctx, s, ObserveArgs{Desktop: true}); r.err != nil {
+					t.Fatal(r.err)
+				}
+				want = "latest observation is desktop"
+			case "window":
+				if r := observe(ctx, s, ObserveArgs{}); r.err != nil {
+					t.Fatal(r.err)
+				}
+				want = "latest observation is window_id=w1"
+			case "consumed":
+				if r := wait(ctx, s, WaitArgs{WindowID: "w1"}); r.err != nil {
+					t.Fatal(r.err)
+				}
+				want = "no current snapshot"
+			case "expired":
+				s.snapshot.Created = time.Now().Add(-61 * time.Second)
+				want = "60-second lifetime"
+			}
+			r := click(ctx, s, ClickArgs{SnapshotID: id, Point: &desktop.Point{X: 10, Y: 10}})
+			requireCode(t, r, "stale_snapshot")
+			_, detail := errorCode(r.err)
+			if !strings.Contains(detail, want) || b.inputs != 0 {
+				t.Fatalf("unsafe or unclear stale rejection: inputs=%d detail=%s", b.inputs, detail)
+			}
+		})
 	}
 }
 func TestStaleElementDoesNotClick(t *testing.T) {

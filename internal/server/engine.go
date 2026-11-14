@@ -174,8 +174,18 @@ func findWindow(b desktop.Backend, id string, active bool) (desktop.Window, erro
 }
 func (s *state) current(id string) (*Snapshot, error) {
 	snap := s.snapshot
-	if snap == nil || snap.ID != id || time.Since(snap.Created) > 60*time.Second {
-		return nil, desktop.Fail("stale_snapshot", "")
+	if snap == nil {
+		return nil, desktop.Fail("stale_snapshot", "no current snapshot; input, wait, window mutations and failed observations invalidate snapshots")
+	}
+	if snap.ID != id {
+		target := "desktop"
+		if snap.Window != nil {
+			target = "window_id=" + snap.Window.ID
+		}
+		return nil, desktop.Fail("stale_snapshot", "latest observation is "+target+"; earlier snapshots are invalid")
+	}
+	if time.Since(snap.Created) > 60*time.Second {
+		return nil, desktop.Fail("stale_snapshot", "snapshot exceeded its 60-second lifetime")
 	}
 	if snap.Window == nil {
 		status, err := s.backend.Status()

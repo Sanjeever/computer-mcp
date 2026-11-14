@@ -58,13 +58,15 @@ Windows 应运行在目标用户的交互式会话中。UIPI 可能阻止向管�
 
 调用 `computer_click` 时提供响应中的 `snapshot_id` 和 `element_id`；若已请求截图，也可改用 `point: {"x": 120, "y": 80}`。两种目标必须且只能提供一种。`computer_type` 与 `computer_key` 要求目标 `window_id` 已激活。文本插入不替换已有内容，不修改剪贴板。替换前请显式全选，macOS 为 `["meta", "a"]`，Windows 为 `["ctrl", "a"]`，然后输入文本。
 
-输入后重新观察。新观察、等待、窗口修改或输入都会使旧快照失效；未使用的快照在 60 秒后过期。输入前检查几何位置、焦点和元素属性，这些检查不能消除与外部桌面变化之间的竞争窗口。
+输入后重新观察。新观察、等待、窗口修改或输入都会使旧快照失效；未使用的快照在 60 秒后过期。所有窗口和桌面共享这一规则，桌面观察也会替换窗口快照。遇到 `stale_snapshot` 时，重新观察预期目标，使用新引用和新截图坐标。输入前检查几何位置、焦点和元素属性，这些检查不能消除与外部桌面变化之间的竞争窗口。
 
 操作 Dock、任务栏、菜单或无窗口桌面时，使用 `computer_observe({"desktop":true})`。该模式返回首个显示器截图，不包含窗口或语义元素。可根据 `computer_status` 的桌面坐标设置 `region`，选择其他显示器或跨显示器截图。桌面快照坐标输入检查显示器布局，不要求窗口焦点。窗口列表覆盖可见、非最小化的应用窗口。
 
 `computer_wait` 接受精确 `window_id`、可选 `text` 和不超过 10,000 的 `timeout_ms`。超时返回 `matched: false`。文本匹配无障碍名称和非密码值，不执行 OCR。
 
 激活会等待窗口焦点确认，默认 2,000 毫秒，可通过 `timeout_ms` 设置，最多 10,000。失败返回 `activation_failed`，已识别的模态阻塞返回 `window_blocked`，不再将 `active:false` 作为成功结果。`computer_wait` 还支持 `active:true`、`focused:true` 和精确 `focus_name`，可与 `text` 组合。键盘工具支持 `auto_activate:true` 和 `focus_name`，在发送前准备目标，共享默认 2,000 毫秒的准备预算。输入发送一次，成功表示已投递，不表示应用处理完成。基于快照的鼠标输入仍要求显式激活后重新观察。
+
+激活窗口不会选择文本框。打开查找栏或对话框后，应检查观察结果中 `focused` 的元素。`focus_name` 是该控件的无障碍 `name`，不是窗口标题；控件无名称时省略。该参数等待焦点，不会转移焦点。键盘工具返回 `focus_timeout` 时，会附带最近观测的控件名称、角色和焦点状态，且未发送输入。`computer_wait` 的条件等待超时则返回 `matched:false`。
 
 观察支持 `text`、`role`、`region`、`compact:true` 和 `max_depth`（1～64）。不截图时也可用 `region` 筛选相交的语义元素。通过 `root_id` 和当前 `snapshot_id` 可限定子树。遍历先访问后代再访问兄弟节点，最多扫描 5,000 个节点，保留不超过 `max_elements` 个可操作引用。macOS 还会读取关联 AX 标签及有界的行内后代文本，补充列表内容。
 

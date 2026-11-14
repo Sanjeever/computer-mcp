@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Sanjeever/computer-mcp/internal/desktop"
@@ -86,7 +87,7 @@ func prepareKeyboard(ctx context.Context, s *state, id string, auto bool, focusN
 			if parent.Err() != nil {
 				return parent.Err()
 			}
-			return desktop.Fail("focus_timeout", "expected focus: "+focusName)
+			return desktop.Fail("focus_timeout", fmt.Sprintf("expected_name=%q; actual_name=%q; actual_role=%q; focused=%t", focusName, focused.Name, focused.Role, focused.Focused))
 		case <-time.After(50 * time.Millisecond):
 		}
 	}

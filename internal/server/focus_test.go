@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Sanjeever/computer-mcp/internal/desktop"
@@ -52,5 +53,21 @@ func TestWaitFocusConditions(t *testing.T) {
 	r = wait(ctx, s, WaitArgs{WindowID: "w1", FocusName: "Editor", Text: "Save", Timeout: 100})
 	if r.err != nil || r.value.(map[string]any)["matched"] != true {
 		t.Fatalf("focus and text: %+v", r)
+	}
+}
+
+func TestFocusTimeoutReportsActualControl(t *testing.T) {
+	s, b := setup()
+	b.focus = desktop.Element{Name: "Find", Role: "AXTextField", Focused: true}
+	r := typeText(context.Background(), s, TypeArgs{WindowID: "w1", Text: "hello", FocusName: "Document", Timeout: 1})
+	requireCode(t, r, "focus_timeout")
+	_, detail := errorCode(r.err)
+	for _, want := range []string{`expected_name="Document"`, `actual_name="Find"`, `actual_role="AXTextField"`, "focused=true"} {
+		if !strings.Contains(detail, want) {
+			t.Fatalf("focus diagnostic missing %s: %s", want, detail)
+		}
+	}
+	if b.inputs != 0 {
+		t.Fatal("input sent to wrong focused control")
 	}
 }
