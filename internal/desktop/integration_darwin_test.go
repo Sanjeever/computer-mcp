@@ -1,0 +1,132 @@
+package desktop
+
+import (
+	"bytes"
+	"context"
+	"image/jpeg"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"testing"
+	"time"
+)
+
+func TestNativeFixture(t *testing.T) {
+	if os.Getenv("COMPUTER_MCP_NATIVE_TEST") != "1" {
+		t.Skip("set COMPUTER_MCP_NATIVE_TEST=1 in an interactive desktop session")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	b, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	status, err := b.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Accessibility || !status.ScreenCapture {
+		t.Skipf("native fixture requires Accessibility and Screen Recording (accessibility=%t, screen_capture=%t)", status.Accessibility, status.ScreenCapture)
+	}
+	binary := filepath.Join(t.TempDir(), "fixture")
+	compile := exec.Command("clang", "-framework", "Cocoa", "testdata/window.m", "-o", binary)
+	if output, err := compile.CombinedOutput(); err != nil {
+		t.Fatalf("fixture build: %v\n%s", err, output)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	app := exec.CommandContext(ctx, binary)
+	if err = app.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = app.Process.Kill(); _ = app.Wait() }()
+	var target Window
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		windows, err := b.Windows()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range windows {
+			if w.PID == app.Process.Pid {
+				target = w
+				break
+			}
+		}
+		if target.ID != "" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if target.ID == "" {
+		t.Fatal("fixture window not found")
+	}
+	if err = b.Window(target, "activate", Rect{}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	windows, err := b.Windows()
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := false
+	for _, w := range windows {
+		if w.ID == target.ID && w.Active {
+			active = true
+			target = w
+		}
+	}
+	if !active {
+		t.Fatal("fixture is not active; refusing to send input")
+	}
+	if err = b.Input(ctx, "type", Input{Text: "Hello 你好 🌍"}); err != nil {
+		t.Fatal(err)
+	}
+	waitValue := func(want string) []Element {
+		t.Helper()
+		var nodes []Element
+		for i := 0; i < 20; i++ {
+			nodes, _, err = b.Observe(ctx, target, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, n := range nodes {
+				if n.Value == want {
+					return nodes
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("fixture value %q not observed", want)
+		return nil
+	}
+	nodes := waitValue("Hello 你好 🌍")
+	capture, err := b.Capture(ctx, target.Bounds, 600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := jpeg.DecodeConfig(bytes.NewReader(capture.Data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Width != capture.Width || config.Height != capture.Height || config.Width > 600 {
+		t.Fatal("screenshot dimensions mismatch")
+	}
+	var button *Element
+	for i := range nodes {
+		if nodes[i].Name == "Fixture submit" {
+			button = &nodes[i]
+			break
+		}
+	}
+	if button == nil {
+		t.Fatal("fixture button missing")
+	}
+	if err = b.Input(ctx, "click", Input{Point: button.Bounds.Center(), Button: "left", Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	waitValue("submitted")
+	t.Logf("native fixture passed: %d elements, JPEG %dx%d (%d bytes), Unicode input and click verified", len(nodes), capture.Width, capture.Height, len(capture.Data))
+}
