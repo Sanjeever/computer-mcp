@@ -10,12 +10,13 @@ import (
 )
 
 type fakeDesktop struct {
-	windows []desktop.Window
-	nodes   []desktop.Element
-	inputs  int
-	input   desktop.Input
-	calls   int
-	err     error
+	windows  []desktop.Window
+	nodes    []desktop.Element
+	inputs   int
+	input    desktop.Input
+	calls    int
+	err      error
+	inputErr error
 }
 
 func (b *fakeDesktop) Status() (desktop.Status, error)    { return desktop.Status{}, nil }
@@ -36,7 +37,7 @@ func (b *fakeDesktop) Window(w desktop.Window, a string, r desktop.Rect) error {
 func (b *fakeDesktop) Input(_ context.Context, _ string, in desktop.Input) error {
 	b.inputs++
 	b.input = in
-	return b.err
+	return b.inputErr
 }
 func (b *fakeDesktop) Capture(context.Context, desktop.Rect, int) (desktop.Capture, error) {
 	return desktop.Capture{Data: []byte("test-image"), Width: 500, Height: 250}, b.err
@@ -130,12 +131,22 @@ func TestInputFailureIsNotRetried(t *testing.T) {
 	ctx := context.Background()
 	observe(ctx, s, ObserveArgs{})
 	id := s.snapshot.ID
-	b.err = errors.New("provider failed")
-	b.windows = nil
+	b.inputErr = errors.New("provider failed after dispatch")
 	requireCode(t, click(ctx, s, ClickArgs{SnapshotID: id, ElementID: "0"}), "native_error")
-	if b.inputs != 0 {
-		t.Fatal("input sent after validation failure")
+	if b.inputs != 1 || s.snapshot != nil {
+		t.Fatal("input retried or snapshot retained after uncertain failure")
 	}
+}
+
+func TestWaitDistinguishesTimeoutFromCancellation(t *testing.T) {
+	s, _ := setup()
+	r := wait(context.Background(), s, WaitArgs{WindowID: "missing", Timeout: 1})
+	if r.err != nil || r.value.(map[string]any)["matched"] != false {
+		t.Fatalf("timeout: %+v", r)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	requireCode(t, wait(ctx, s, WaitArgs{WindowID: "w1", Timeout: 1}), "canceled")
 }
 func TestPasswordRedactionAndWait(t *testing.T) {
 	s, b := setup()

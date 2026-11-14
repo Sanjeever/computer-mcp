@@ -458,11 +458,18 @@ func wait(ctx context.Context, s *state, a WaitArgs) response {
 		return invalid("timeout_ms: 1..10000; text <=1024 bytes")
 	}
 	s.snapshot = nil
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(a.Timeout)*time.Millisecond)
 	defer cancel()
+	finished := func() response {
+		if err := parent.Err(); err != nil {
+			return response{err: err}
+		}
+		return response{value: map[string]any{"matched": false}}
+	}
 	for {
 		if ctx.Err() != nil {
-			return response{value: map[string]any{"matched": false}}
+			return finished()
 		}
 		w, err := findWindow(s.backend, a.WindowID, false)
 		if err == nil {
@@ -480,12 +487,15 @@ func wait(ctx context.Context, s *state, a WaitArgs) response {
 			}
 		}
 		var de *desktop.Error
+		if ctx.Err() != nil {
+			return finished()
+		}
 		if err != nil && (!errors.As(err, &de) || de.Code != "window_not_found") {
 			return response{err: err}
 		}
 		select {
 		case <-ctx.Done():
-			return response{value: map[string]any{"matched": false}}
+			return finished()
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
