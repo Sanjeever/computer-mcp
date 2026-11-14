@@ -13,6 +13,17 @@
 }
 @end
 
+@interface FixtureClickTarget : NSView
+@property(assign) NSTextField *field;
+@end
+@implementation FixtureClickTarget
+- (void)drawRect:(NSRect)dirtyRect {
+    [NSColor.magentaColor setFill];
+    NSRectFill(self.bounds);
+}
+- (void)mouseDown:(NSEvent *)event { self.field.stringValue = @"image clicked"; }
+@end
+
 @interface Fixture : NSObject <NSApplicationDelegate, NSTableViewDataSource>
 @property(retain) NSWindow *window;
 @property(retain) NSTextField *field;
@@ -37,6 +48,9 @@
     self.field = [[NSTextField alloc] initWithFrame:NSMakeRect(40, 180, 500, 40)];
     self.field.accessibilityLabel = @"Fixture input";
     [self.window.contentView addSubview:self.field];
+    FixtureClickTarget *clickTarget = [[FixtureClickTarget alloc] initWithFrame:NSMakeRect(550, 20, 30, 30)];
+    clickTarget.field = self.field;
+    [self.window.contentView addSubview:clickTarget];
     NSButton *button = [NSButton buttonWithTitle:@"Fixture submit"
                                           target:self
                                           action:@selector(submit:)];
