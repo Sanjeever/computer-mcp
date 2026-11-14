@@ -148,6 +148,12 @@ var windowCallback = syscall.NewCallback(func(handle uintptr, _ uintptr) uintptr
 		w.CloseHandle(process)
 	}
 	result.windows = append(result.windows, Window{ID: strconv.FormatUint(uint64(handle), 10), PID: int(pid), App: app, Title: syscall.UTF16ToString(buf[:n]), Bounds: winRect(r), Active: h == result.active})
+	if w.IsWindowEnabled(h) == 0 {
+		popup := w.GetLastActivePopup(h)
+		if popup != 0 && popup != h {
+			result.windows[len(result.windows)-1].BlockedBy = strconv.FormatUint(uint64(popup), 10)
+		}
+	}
 	if len(result.windows) >= 512 {
 		return 0
 	}
@@ -295,6 +301,28 @@ func (b *winBackend) Resolve(id string) (Element, error) {
 	}
 	defer updated.Release()
 	return cachedNode(updated, id, "")
+}
+func (b *winBackend) Focus(target Window) (Element, error) {
+	h, err := hwnd(target.ID)
+	if err != nil {
+		return Element{}, err
+	}
+	if w.GetForegroundWindow() != h {
+		return Element{}, nil
+	}
+	var e *w.IUIAutomationElement
+	if err := hr(b.automation.GetFocusedElementBuildCache(b.cache, &e)); err != nil {
+		return Element{}, err
+	}
+	defer e.Release()
+	var pid int32
+	if err := hr(e.Get_CurrentProcessId(&pid)); err != nil {
+		return Element{}, err
+	}
+	if int(pid) != target.PID {
+		return Element{}, nil
+	}
+	return cachedNode(e, "", "")
 }
 func (b *winBackend) Capture(ctx context.Context, r Rect, width int) (Capture, error) {
 	if err := ctx.Err(); err != nil {

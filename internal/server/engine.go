@@ -149,8 +149,17 @@ func findWindow(b desktop.Backend, id string, active bool) (desktop.Window, erro
 	}
 	for _, w := range windows {
 		if (id == "" && w.Active) || w.ID == id {
+			if active && w.BlockedBy != "" {
+				return w, desktop.Fail("window_blocked", w.BlockedBy)
+			}
 			if active && !w.Active {
-				return w, desktop.Fail("not_active", id)
+				detail := "target=" + id
+				for _, current := range windows {
+					if current.Active {
+						detail += fmt.Sprintf("; active=%s (%s, %s)", current.ID, current.App, current.Title)
+					}
+				}
+				return w, desktop.Fail("not_active", detail)
 			}
 			return w, nil
 		}
@@ -194,6 +203,7 @@ type WindowArgs struct {
 	WindowID string        `json:"window_id,omitempty"`
 	ByApp    string        `json:"by_app,omitempty"`
 	ByTitle  string        `json:"by_title,omitempty"`
+	Timeout  int           `json:"timeout_ms,omitempty"`
 	Bounds   *desktop.Rect `json:"bounds,omitempty"`
 }
 type ObserveArgs struct {
@@ -212,12 +222,18 @@ type ClickArgs struct {
 	Count      int            `json:"count,omitempty"`
 }
 type TypeArgs struct {
-	WindowID string `json:"window_id"`
-	Text     string `json:"text"`
+	WindowID     string `json:"window_id"`
+	Text         string `json:"text"`
+	AutoActivate bool   `json:"auto_activate,omitempty"`
+	FocusName    string `json:"focus_name,omitempty"`
+	Timeout      int    `json:"timeout_ms,omitempty"`
 }
 type KeyArgs struct {
-	WindowID string   `json:"window_id"`
-	Keys     []string `json:"keys"`
+	WindowID     string   `json:"window_id"`
+	Keys         []string `json:"keys"`
+	AutoActivate bool     `json:"auto_activate,omitempty"`
+	FocusName    string   `json:"focus_name,omitempty"`
+	Timeout      int      `json:"timeout_ms,omitempty"`
 }
 type ScrollArgs struct {
 	SnapshotID string        `json:"snapshot_id"`
@@ -232,9 +248,12 @@ type DragArgs struct {
 	Duration   int           `json:"duration_ms,omitempty"`
 }
 type WaitArgs struct {
-	WindowID string `json:"window_id"`
-	Text     string `json:"text,omitempty"`
-	Timeout  int    `json:"timeout_ms,omitempty"`
+	WindowID  string `json:"window_id"`
+	Text      string `json:"text,omitempty"`
+	Timeout   int    `json:"timeout_ms,omitempty"`
+	Active    bool   `json:"active,omitempty"`
+	Focused   bool   `json:"focused,omitempty"`
+	FocusName string `json:"focus_name,omitempty"`
 }
 
 func invalid(detail string) response { return response{err: desktop.Fail("invalid_argument", detail)} }
@@ -247,6 +266,9 @@ func status(ctx context.Context, s *state, _ StatusArgs) response {
 	return response{value: v, err: err}
 }
 func window(ctx context.Context, s *state, a WindowArgs) response {
+	if a.Timeout < 0 || a.Timeout > 10000 || (a.Timeout != 0 && a.Action != "activate") {
+		return invalid("timeout_ms: 1..10000, for activate only")
+	}
 	if a.WindowID != "" && (a.ByApp != "" || a.ByTitle != "") {
 		return invalid("window_id cannot be combined with by_app or by_title")
 	}
@@ -290,6 +312,10 @@ func window(ctx context.Context, s *state, a WindowArgs) response {
 		r = *a.Bounds
 	}
 	s.snapshot = nil
+	if a.Action == "activate" {
+		w, err = activateWindow(ctx, s.backend, w, a.Timeout)
+		return response{value: w, err: err}
+	}
 	if err = s.backend.Window(w, a.Action, r); err != nil {
 		return response{err: err}
 	}
@@ -476,7 +502,7 @@ func typeText(ctx context.Context, s *state, a TypeArgs) response {
 	if a.WindowID == "" || len(a.Text) == 0 || len(a.Text) > 65536 || strings.ContainsRune(a.Text, 0) {
 		return invalid("window_id and 1..65536 bytes of non-NUL text required")
 	}
-	if _, err := findWindow(s.backend, a.WindowID, true); err != nil {
+	if err := prepareKeyboard(ctx, s, a.WindowID, a.AutoActivate, a.FocusName, a.Timeout); err != nil {
 		return response{err: err}
 	}
 	s.snapshot = nil
@@ -503,7 +529,7 @@ func key(ctx context.Context, s *state, a KeyArgs) response {
 	if a.Keys[len(a.Keys)-1] == "ctrl" || a.Keys[len(a.Keys)-1] == "alt" || a.Keys[len(a.Keys)-1] == "shift" || a.Keys[len(a.Keys)-1] == "meta" {
 		return invalid("put modifiers before the final key")
 	}
-	if _, err := findWindow(s.backend, a.WindowID, true); err != nil {
+	if err := prepareKeyboard(ctx, s, a.WindowID, a.AutoActivate, a.FocusName, a.Timeout); err != nil {
 		return response{err: err}
 	}
 	s.snapshot = nil
@@ -553,7 +579,7 @@ func wait(ctx context.Context, s *state, a WaitArgs) response {
 	if a.Timeout == 0 {
 		a.Timeout = 5000
 	}
-	if a.Timeout < 1 || a.Timeout > 10000 || len(a.Text) > 1024 {
+	if a.Timeout < 1 || a.Timeout > 10000 || len(a.Text) > 1024 || len(a.FocusName) > 1024 {
 		return invalid("timeout_ms: 1..10000; text <=1024 bytes")
 	}
 	s.snapshot = nil
@@ -570,8 +596,14 @@ func wait(ctx context.Context, s *state, a WaitArgs) response {
 		if ctx.Err() != nil {
 			return finished()
 		}
-		w, err := findWindow(s.backend, a.WindowID, false)
-		if err == nil {
+		w, err := findWindow(s.backend, a.WindowID, a.Active || a.Focused || a.FocusName != "")
+		ready := err == nil
+		if ready && (a.Focused || a.FocusName != "") {
+			var focused desktop.Element
+			focused, err = s.backend.Focus(w)
+			ready = err == nil && focused.Focused && (a.FocusName == "" || focused.Name == a.FocusName)
+		}
+		if ready {
 			if a.Text == "" {
 				return response{value: map[string]any{"matched": true, "window": w}}
 			}
@@ -589,7 +621,7 @@ func wait(ctx context.Context, s *state, a WaitArgs) response {
 		if ctx.Err() != nil {
 			return finished()
 		}
-		if err != nil && (!errors.As(err, &de) || de.Code != "window_not_found") {
+		if err != nil && (!errors.As(err, &de) || (de.Code != "window_not_found" && de.Code != "not_active")) {
 			return response{err: err}
 		}
 		select {

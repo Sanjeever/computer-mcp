@@ -44,6 +44,22 @@ static NSDictionary *rect(CGRect r) {
     };
 }
 static AXUIElementRef windowRef(NSString *key) { return (AXUIElementRef)windows[key]; }
+static NSString *blockedBy(AXUIElementRef w) {
+    CFArrayRef children = NULL;
+    CFIndex count = 0;
+    if (AXUIElementGetAttributeValueCount(w, kAXChildrenAttribute, &count) == kAXErrorSuccess && count > 0 &&
+        AXUIElementCopyAttributeValues(w, kAXChildrenAttribute, 0, MIN(count, 64), &children) == kAXErrorSuccess) {
+        for (id child in (NSArray *)children) {
+            if ([text(attr((AXUIElementRef)child, kAXRoleAttribute)) isEqualToString:(id)kAXSheetRole]) {
+                NSString *title = text(attr((AXUIElementRef)child, kAXTitleAttribute));
+                CFRelease(children);
+                return title.length ? [@"sheet: " stringByAppendingString:title] : @"modal sheet";
+            }
+        }
+        CFRelease(children);
+    }
+    return @"";
+}
 static NSNumber *windowNumber(AXUIElementRef w, pid_t pid, NSArray *screenWindows) {
     CGRect r = bounds(w);
     NSMutableArray *matches = [NSMutableArray array];
@@ -161,6 +177,7 @@ static NSDictionary *listWindows(void) {
                     @"app_id" : app.bundleIdentifier ?: @"",
                     @"title" : text(attr(w, kAXTitleAttribute)),
                     @"bounds" : rect(r),
+                    @"blocked_by" : blockedBy(w),
                     @"active" : @((BOOL)(front == pid && focused && CFEqual((CFTypeRef)focused, w)))
                 }];
                 if (out.count >= 512)
@@ -339,6 +356,23 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
         return listWindows();
     if ([op isEqualToString:@"observe"])
         return observe(args);
+    if ([op isEqualToString:@"focus"]) {
+        AXUIElementRef w = windowRef(args[@"window_id"]);
+        if (!w)
+            return failure(@"window_not_found", @"");
+        pid_t pid = 0;
+        AXUIElementGetPid(w, &pid);
+        AXUIElementRef app = AXUIElementCreateApplication(pid);
+        AXUIElementSetMessagingTimeout(app, 0.15);
+        id focused = attr(app, kAXFocusedUIElementAttribute);
+        CFRelease(app);
+        if (!focused)
+            return @{};
+        id owner = attr((AXUIElementRef)focused, kAXWindowAttribute);
+        if (!owner || !CFEqual((CFTypeRef)owner, w))
+            return @{};
+        return node((AXUIElementRef)focused, @"", @"") ?: @{};
+    }
     if ([op isEqualToString:@"resolve"]) {
         NSUInteger i = [args[@"element_id"] integerValue];
         if (i >= elements.count)
@@ -352,6 +386,9 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
             return failure(@"window_not_found", @"");
         AXError status;
         if ([args[@"action"] isEqualToString:@"activate"]) {
+            NSString *blocker = blockedBy(w);
+            if (blocker.length)
+                return failure(@"window_blocked", blocker);
             pid_t pid = 0;
             AXUIElementGetPid(w, &pid);
             if (![[NSRunningApplication runningApplicationWithProcessIdentifier:pid]

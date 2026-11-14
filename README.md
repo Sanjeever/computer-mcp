@@ -64,6 +64,8 @@ For the Dock, taskbar, menus, or an empty desktop, use `computer_observe({"deskt
 
 `computer_wait` accepts an exact `window_id`, optional `text`, and `timeout_ms` up to 10,000. It returns `matched: false` on timeout. Text matches accessibility names and non-password values; it does not perform OCR.
 
+Activation waits for confirmed window focus (default 2,000 ms, configurable with `timeout_ms` up to 10,000). It reports `activation_failed` or an identified `window_blocked` instead of succeeding with `active:false`. `computer_wait` also accepts `active:true`, `focused:true`, and an exact `focus_name`; conditions combine with `text`. Keyboard tools accept `auto_activate:true` and `focus_name` to prepare the target before sending input, sharing a default 2,000 ms preparation budget. Input is sent once; success confirms delivery, not application processing. Snapshot-based mouse input still requires explicit activation followed by a fresh observation.
+
 ## Limits and behavior
 
 - Observation defaults to 200 elements; maximum 1,000. Tree traversal has a three-second budget and reports `truncated`. Text values and names are bounded. Provider-specific delays can exceed the traversal budget.

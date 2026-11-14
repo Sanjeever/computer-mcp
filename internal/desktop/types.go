@@ -27,13 +27,14 @@ func (r Rect) Contains(p Point) bool {
 func (r Rect) Center() Point { return Point{r.X + r.Width/2, r.Y + r.Height/2} }
 
 type Window struct {
-	ID     string `json:"window_id"`
-	PID    int    `json:"pid"`
-	App    string `json:"app"`
-	AppID  string `json:"app_id,omitempty"`
-	Title  string `json:"title"`
-	Bounds Rect   `json:"bounds"`
-	Active bool   `json:"active"`
+	ID        string `json:"window_id"`
+	PID       int    `json:"pid"`
+	App       string `json:"app"`
+	AppID     string `json:"app_id,omitempty"`
+	Title     string `json:"title"`
+	Bounds    Rect   `json:"bounds"`
+	Active    bool   `json:"active"`
+	BlockedBy string `json:"blocked_by,omitempty"`
 }
 type Element struct {
 	ID       string `json:"element_id"`
@@ -77,6 +78,7 @@ type Backend interface {
 	Windows() ([]Window, error)
 	Observe(context.Context, Window, int) ([]Element, bool, error)
 	Resolve(string) (Element, error)
+	Focus(Window) (Element, error)
 	Window(Window, string, Rect) error
 	Input(context.Context, string, Input) error
 	Capture(context.Context, Rect, int) (Capture, error)

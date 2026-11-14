@@ -64,6 +64,8 @@ Windows 应运行在目标用户的交互式会话中。UIPI 可能阻止向管�
 
 `computer_wait` 接受精确 `window_id`、可选 `text` 和不超过 10,000 的 `timeout_ms`。超时返回 `matched: false`。文本匹配无障碍名称和非密码值，不执行 OCR。
 
+激活会等待窗口焦点确认，默认 2,000 毫秒，可通过 `timeout_ms` 设置，最多 10,000。失败返回 `activation_failed`，已识别的模态阻塞返回 `window_blocked`，不再将 `active:false` 作为成功结果。`computer_wait` 还支持 `active:true`、`focused:true` 和精确 `focus_name`，可与 `text` 组合。键盘工具支持 `auto_activate:true` 和 `focus_name`，在发送前准备目标，共享默认 2,000 毫秒的准备预算。输入发送一次，成功表示已投递，不表示应用处理完成。基于快照的鼠标输入仍要求显式激活后重新观察。
+
 ## 限制与行为
 
 - 默认观察 200 个元素，最多 1,000 个。树遍历预算为三秒，未完成时返回 `truncated`。名称和值均有长度上限，原生 provider 阻塞可能超出遍历预算。

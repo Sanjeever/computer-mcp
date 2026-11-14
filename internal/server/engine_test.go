@@ -18,6 +18,8 @@ type fakeDesktop struct {
 	err      error
 	inputErr error
 	displays []desktop.Display
+	focus    desktop.Element
+	activate bool
 }
 
 func (b *fakeDesktop) Status() (desktop.Status, error) {
@@ -36,7 +38,15 @@ func (b *fakeDesktop) Resolve(id string) (desktop.Element, error) {
 	}
 	return desktop.Element{}, desktop.Fail("stale_snapshot", id)
 }
-func (b *fakeDesktop) Window(w desktop.Window, a string, r desktop.Rect) error { return b.err }
+func (b *fakeDesktop) Window(w desktop.Window, a string, r desktop.Rect) error {
+	if b.activate && a == "activate" {
+		for i := range b.windows {
+			b.windows[i].Active = b.windows[i].ID == w.ID
+		}
+	}
+	return b.err
+}
+func (b *fakeDesktop) Focus(desktop.Window) (desktop.Element, error) { return b.focus, b.err }
 func (b *fakeDesktop) Input(_ context.Context, _ string, in desktop.Input) error {
 	b.inputs++
 	b.input = in

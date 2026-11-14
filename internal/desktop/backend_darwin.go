@@ -77,6 +77,11 @@ func (b *macBackend) Resolve(id string) (Element, error) {
 	err := macCall("resolve", map[string]any{"element_id": id}, &e)
 	return e, err
 }
+func (b *macBackend) Focus(w Window) (Element, error) {
+	var e Element
+	err := macCall("focus", map[string]any{"window_id": w.ID}, &e)
+	return e, err
+}
 func (b *macBackend) Window(w Window, action string, r Rect) error {
 	return macCall("window", map[string]any{"window_id": w.ID, "action": action, "bounds": r}, nil)
 }
