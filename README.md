@@ -66,6 +66,10 @@ For the Dock, taskbar, menus, or an empty desktop, use `computer_observe({"deskt
 
 Activation waits for confirmed window focus (default 2,000 ms, configurable with `timeout_ms` up to 10,000). It reports `activation_failed` or an identified `window_blocked` instead of succeeding with `active:false`. `computer_wait` also accepts `active:true`, `focused:true`, and an exact `focus_name`; conditions combine with `text`. Keyboard tools accept `auto_activate:true` and `focus_name` to prepare the target before sending input, sharing a default 2,000 ms preparation budget. Input is sent once; success confirms delivery, not application processing. Snapshot-based mouse input still requires explicit activation followed by a fresh observation.
 
+Observation supports `text`, `role`, `region`, `compact:true`, and `max_depth` (1–64). `region` filters intersecting semantic elements even without a screenshot. `root_id` with the current `snapshot_id` scopes traversal to a subtree. Traversal visits descendants before siblings, scans at most 5,000 nodes, and retains at most `max_elements` actionable references. macOS also reads associated AX labels and bounded row descendants to expose list text.
+
+Pass `since_snapshot_id` from the latest observation with the same window and filters for a diff. `elements` then contains new/changed nodes; remove `removed_element_ids` and use `element_order` to reconstruct the current bounded result. `diff_complete:false` means at least one observation was truncated: removal from the result does not establish removal from the application. Use the new `snapshot_id` for every subsequent action, including unchanged elements. Native identity changes are represented as removal/addition. Diffs reduce response size, not native traversal work.
+
 ## Limits and behavior
 
 - Observation defaults to 200 elements; maximum 1,000. Tree traversal has a three-second budget and reports `truncated`. Text values and names are bounded. Provider-specific delays can exceed the traversal budget.

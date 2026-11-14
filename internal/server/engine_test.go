@@ -26,7 +26,7 @@ func (b *fakeDesktop) Status() (desktop.Status, error) {
 	return desktop.Status{Displays: b.displays}, nil
 }
 func (b *fakeDesktop) Windows() ([]desktop.Window, error) { return b.windows, b.err }
-func (b *fakeDesktop) Observe(context.Context, desktop.Window, int) ([]desktop.Element, bool, error) {
+func (b *fakeDesktop) Observe(context.Context, desktop.Window, desktop.ObserveOptions) ([]desktop.Element, bool, error) {
 	b.calls++
 	return b.nodes, false, b.err
 }

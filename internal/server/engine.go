@@ -19,15 +19,16 @@ import (
 )
 
 type Snapshot struct {
-	ID          string            `json:"snapshot_id"`
-	Window      *desktop.Window   `json:"window,omitempty"`
-	Displays    []desktop.Display `json:"displays,omitempty"`
-	Elements    []desktop.Element `json:"elements"`
-	Truncated   bool              `json:"truncated"`
-	Region      desktop.Rect      `json:"region"`
-	ImageWidth  int               `json:"image_width,omitempty"`
-	ImageHeight int               `json:"image_height,omitempty"`
-	Created     time.Time         `json:"created_at"`
+	ID          string                 `json:"snapshot_id"`
+	Window      *desktop.Window        `json:"window,omitempty"`
+	Displays    []desktop.Display      `json:"displays,omitempty"`
+	Elements    []desktop.Element      `json:"elements"`
+	Truncated   bool                   `json:"truncated"`
+	Region      desktop.Rect           `json:"region"`
+	ImageWidth  int                    `json:"image_width,omitempty"`
+	ImageHeight int                    `json:"image_height,omitempty"`
+	Created     time.Time              `json:"created_at"`
+	Scope       desktop.ObserveOptions `json:"-"`
 }
 type response struct {
 	value any
@@ -48,6 +49,7 @@ type Engine struct {
 type state struct {
 	backend  desktop.Backend
 	snapshot *Snapshot
+	previous *Snapshot
 }
 
 func NewEngine(parent context.Context) *Engine {
@@ -207,12 +209,19 @@ type WindowArgs struct {
 	Bounds   *desktop.Rect `json:"bounds,omitempty"`
 }
 type ObserveArgs struct {
-	Desktop     bool          `json:"desktop,omitempty"`
-	WindowID    string        `json:"window_id,omitempty"`
-	Screenshot  bool          `json:"screenshot,omitempty"`
-	MaxElements int           `json:"max_elements,omitempty"`
-	MaxWidth    int           `json:"max_width,omitempty"`
-	Region      *desktop.Rect `json:"region,omitempty"`
+	Desktop         bool          `json:"desktop,omitempty"`
+	WindowID        string        `json:"window_id,omitempty"`
+	Screenshot      bool          `json:"screenshot,omitempty"`
+	MaxElements     int           `json:"max_elements,omitempty"`
+	MaxWidth        int           `json:"max_width,omitempty"`
+	Region          *desktop.Rect `json:"region,omitempty"`
+	RootID          string        `json:"root_id,omitempty"`
+	SnapshotID      string        `json:"snapshot_id,omitempty"`
+	Text            string        `json:"text,omitempty"`
+	Role            string        `json:"role,omitempty"`
+	Compact         bool          `json:"compact,omitempty"`
+	MaxDepth        int           `json:"max_depth,omitempty"`
+	SinceSnapshotID string        `json:"since_snapshot_id,omitempty"`
 }
 type ClickArgs struct {
 	SnapshotID string         `json:"snapshot_id"`
@@ -336,6 +345,37 @@ func selectWindows(windows []desktop.Window, app, title string) []desktop.Window
 	return result
 }
 func observe(ctx context.Context, s *state, a ObserveArgs) response {
+	if a.MaxDepth == 0 {
+		a.MaxDepth = 64
+	}
+	if a.MaxDepth < 1 || a.MaxDepth > 64 || len(a.Text) > 1024 || len(a.Role) > 128 {
+		return invalid("max_depth: 1..64; text <=1024 bytes; role <=128 bytes")
+	}
+	if (a.RootID == "") != (a.SnapshotID == "") {
+		return invalid("root_id requires snapshot_id and vice versa")
+	}
+	if a.RootID != "" {
+		if s.snapshot == nil || s.snapshot.ID != a.SnapshotID || time.Since(s.snapshot.Created) > time.Minute || s.snapshot.Window == nil {
+			return response{err: desktop.Fail("stale_snapshot", "subtree root")}
+		}
+		if a.WindowID != "" && a.WindowID != s.snapshot.Window.ID {
+			return invalid("subtree belongs to another window")
+		}
+		a.WindowID = s.snapshot.Window.ID
+		found := false
+		for _, e := range s.snapshot.Elements {
+			if e.ID == a.RootID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return response{err: desktop.Fail("stale_snapshot", "subtree root")}
+		}
+	}
+	if a.SinceSnapshotID != "" && (s.previous == nil || s.previous.ID != a.SinceSnapshotID) {
+		return response{err: desktop.Fail("stale_snapshot", "diff base is not the latest observation")}
+	}
 	if a.MaxElements == 0 {
 		a.MaxElements = 200
 	}
@@ -346,6 +386,9 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		return invalid("max_elements: 1..1000; max_width: 320..2560")
 	}
 	if a.Desktop {
+		if a.RootID != "" || a.Text != "" || a.Role != "" || a.Compact || a.SinceSnapshotID != "" {
+			return invalid("desktop mode does not accept semantic filters or diffs")
+		}
 		if a.WindowID != "" {
 			return invalid("desktop mode does not accept window_id")
 		}
@@ -388,10 +431,11 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		}
 		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, Created: time.Now().UTC()}
 		s.snapshot = snap
+		s.previous = snap
 		return response{value: snap, image: capture.Data}
 	}
-	if !a.Screenshot && (a.Region != nil || a.MaxWidth != 1440) {
-		return invalid("region and max_width require screenshot=true")
+	if !a.Screenshot && a.MaxWidth != 1440 {
+		return invalid("max_width requires screenshot=true")
 	}
 	s.snapshot = nil
 	w, err := findWindow(s.backend, a.WindowID, false)
@@ -408,7 +452,11 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 			return invalid("region must be inside window bounds")
 		}
 	}
-	elements, truncated, err := s.backend.Observe(ctx, w, a.MaxElements)
+	options := desktop.ObserveOptions{Limit: a.MaxElements, RootID: a.RootID, Region: a.Region, Text: a.Text, Role: a.Role, Compact: a.Compact, MaxDepth: a.MaxDepth}
+	if a.SinceSnapshotID != "" && (s.previous.Window == nil || s.previous.Window.ID != w.ID || !sameScope(s.previous.Scope, options)) {
+		return invalid("diff requires the same window and observation filters")
+	}
+	elements, truncated, err := s.backend.Observe(ctx, w, options)
 	if err != nil {
 		return response{err: err}
 	}
@@ -427,7 +475,7 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 	if _, err = rand.Read(token); err != nil {
 		return response{err: err}
 	}
-	snap := &Snapshot{ID: hex.EncodeToString(token), Window: &w, Elements: elements, Truncated: truncated, Region: region, Created: time.Now().UTC()}
+	snap := &Snapshot{ID: hex.EncodeToString(token), Window: &w, Elements: elements, Truncated: truncated, Region: region, Created: time.Now().UTC(), Scope: options}
 	var data []byte
 	if a.Screenshot {
 		capture, err := s.backend.Capture(ctx, region, a.MaxWidth)
@@ -442,7 +490,12 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		return response{err: err}
 	}
 	s.snapshot = snap
-	return response{value: snap, image: data}
+	var value any = snap
+	if a.SinceSnapshotID != "" {
+		value = diffSnapshots(s.previous, snap)
+	}
+	s.previous = snap
+	return response{value: value, image: data}
 }
 func clip(v string, n int) string {
 	r := []rune(v)
@@ -608,7 +661,7 @@ func wait(ctx context.Context, s *state, a WaitArgs) response {
 				return response{value: map[string]any{"matched": true, "window": w}}
 			}
 			var nodes []desktop.Element
-			nodes, _, err = s.backend.Observe(ctx, w, 500)
+			nodes, _, err = s.backend.Observe(ctx, w, desktop.ObserveOptions{Limit: 500, MaxDepth: 64, Text: a.Text})
 			if err == nil {
 				for _, n := range nodes {
 					if strings.Contains(n.Name, a.Text) || (!n.Password && strings.Contains(n.Value, a.Text)) {

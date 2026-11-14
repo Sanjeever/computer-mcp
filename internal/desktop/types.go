@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 )
 
 type Rect struct {
@@ -25,6 +26,38 @@ func (r Rect) Contains(p Point) bool {
 	return p.X >= r.X && p.Y >= r.Y && p.X < r.X+r.Width && p.Y < r.Y+r.Height
 }
 func (r Rect) Center() Point { return Point{r.X + r.Width/2, r.Y + r.Height/2} }
+func (r Rect) Intersects(other Rect) bool {
+	return r.X < other.X+other.Width && r.X+r.Width > other.X && r.Y < other.Y+other.Height && r.Y+r.Height > other.Y
+}
+
+type ObserveOptions struct {
+	Limit    int    `json:"limit"`
+	RootID   string `json:"root_id,omitempty"`
+	Region   *Rect  `json:"region,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Role     string `json:"role,omitempty"`
+	Compact  bool   `json:"compact,omitempty"`
+	MaxDepth int    `json:"max_depth"`
+}
+
+func (o ObserveOptions) Includes(e Element) bool {
+	if o.Region != nil && !o.Region.Intersects(e.Bounds) {
+		return false
+	}
+	if o.Role != "" && !strings.EqualFold(e.Role, o.Role) {
+		return false
+	}
+	if o.Text != "" && !strings.Contains(e.Name, o.Text) && (e.Password || !strings.Contains(e.Value, o.Text)) {
+		return false
+	}
+	if o.Compact && e.Name == "" && e.Value == "" && !e.Focused {
+		switch strings.ToLower(e.Role) {
+		case "group", "pane", "axgroup", "axlayoutarea", "axscrollarea":
+			return false
+		}
+	}
+	return true
+}
 
 type Window struct {
 	ID        string `json:"window_id"`
@@ -76,7 +109,7 @@ type Input struct {
 type Backend interface {
 	Status() (Status, error)
 	Windows() ([]Window, error)
-	Observe(context.Context, Window, int) ([]Element, bool, error)
+	Observe(context.Context, Window, ObserveOptions) ([]Element, bool, error)
 	Resolve(string) (Element, error)
 	Focus(Window) (Element, error)
 	Window(Window, string, Rect) error

@@ -88,7 +88,7 @@ func TestNativeFixture(t *testing.T) {
 		t.Helper()
 		var nodes []Element
 		for i := 0; i < 20; i++ {
-			nodes, _, err = b.Observe(ctx, target, 100)
+			nodes, _, err = b.Observe(ctx, target, ObserveOptions{Limit: 100, MaxDepth: 64})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,6 +103,27 @@ func TestNativeFixture(t *testing.T) {
 		return nil
 	}
 	nodes := waitValue("Hello 你好 🌍")
+	var input Element
+	for _, n := range nodes {
+		if n.Name == "Fixture input" {
+			input = n
+		}
+	}
+	if input.ID == "" {
+		t.Fatal("fixture input is unnamed")
+	}
+	focused, err := b.Focus(target)
+	if err != nil || !focused.Focused || focused.Name != input.Name {
+		t.Fatalf("focus: %+v, %v", focused, err)
+	}
+	subtree, truncated, err := b.Observe(ctx, target, ObserveOptions{Limit: 20, MaxDepth: 64, RootID: input.ID})
+	if err != nil || truncated || len(subtree) != 1 || subtree[0].ID != input.ID {
+		t.Fatalf("subtree identity: %+v, truncated=%v, %v", subtree, truncated, err)
+	}
+	nodes, _, err = b.Observe(ctx, target, ObserveOptions{Limit: 100, MaxDepth: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
 	capture, err := b.Capture(ctx, target.Bounds, 600)
 	if err != nil {
 		t.Fatal(err)

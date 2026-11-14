@@ -6,8 +6,9 @@
 
 static NSMutableDictionary *windows;
 static NSMutableDictionary *windowNumbers;
-static NSMutableArray *elements;
+static NSMutableDictionary *elements;
 static unsigned long nextWindow = 1;
+static unsigned long nextElement = 1;
 
 static NSDictionary *failure(NSString *code, NSString *detail) {
     return @{@"code" : code, @"detail" : detail ?: @""};
@@ -86,6 +87,32 @@ static NSNumber *windowNumber(AXUIElementRef w, pid_t pid, NSArray *screenWindow
     }
     return matches.count == 1 ? matches[0][(id)kCGWindowNumber] : nil;
 }
+static NSString *rowText(AXUIElementRef e, int depth, int *budget) {
+    if (depth == 0 || (*budget)-- <= 0)
+        return @"";
+    if ([text(attr(e, kAXSubroleAttribute)) isEqualToString:@"AXSecureTextField"])
+        return @"";
+    NSString *value = text(attr(e, kAXValueAttribute));
+    if (!value.length)
+        value = text(attr(e, kAXTitleAttribute));
+    if (value.length)
+        return value;
+    CFIndex count = 0;
+    CFArrayRef children = NULL;
+    NSMutableArray *parts = [NSMutableArray array];
+    if (AXUIElementGetAttributeValueCount(e, kAXChildrenAttribute, &count) == kAXErrorSuccess && count > 0 &&
+        AXUIElementCopyAttributeValues(e, kAXChildrenAttribute, 0, MIN(count, 8), &children) == kAXErrorSuccess) {
+        for (id child in (NSArray *)children) {
+            NSString *part = rowText((AXUIElementRef)child, depth - 1, budget);
+            if (part.length)
+                [parts addObject:part];
+            if (*budget <= 0)
+                break;
+        }
+        CFRelease(children);
+    }
+    return text([parts componentsJoinedByString:@" · "]);
+}
 static NSDictionary *node(AXUIElementRef e, NSString *eid, NSString *parent) {
     NSArray *names = @[
         (id)kAXRoleAttribute, (id)kAXTitleAttribute, (id)kAXDescriptionAttribute,
@@ -104,6 +131,18 @@ static NSDictionary *node(AXUIElementRef e, NSString *eid, NSString *parent) {
     NSString *title = text(v[1]);
     if (!title.length)
         title = text(v[2]);
+    if (!title.length && !password) {
+        id label = attr(e, kAXTitleUIElementAttribute);
+        if (label) {
+            title = text(attr((AXUIElementRef)label, kAXValueAttribute));
+            if (!title.length)
+                title = text(attr((AXUIElementRef)label, kAXTitleAttribute));
+        }
+        if (!title.length && [role isEqualToString:(id)kAXRowRole]) {
+            int budget = 24;
+            title = rowText(e, 4, &budget);
+        }
+    }
     BOOL enabled = ![v[4] isKindOfClass:NSNumber.class] || [v[4] boolValue];
     BOOL focused = [v[5] isKindOfClass:NSNumber.class] && [v[5] boolValue];
     NSMutableDictionary *result = [@{
@@ -215,51 +254,99 @@ static NSDictionary *listWindows(void) {
     windows = [fresh mutableCopy];
     return @{@"windows" : out};
 }
-static NSDictionary *observe(NSDictionary *args) {
-    AXUIElementRef root = windowRef(args[@"window_id"]);
-    if (!root)
-        return failure(@"window_not_found", args[@"window_id"]);
-    [elements release];
-    elements = [NSMutableArray new];
-    NSInteger limit = [args[@"limit"] integerValue];
-    NSMutableArray *queue = [NSMutableArray arrayWithObject:@{@"node" : (id)root, @"parent" : @""}];
-    NSMutableArray *out = [NSMutableArray array];
-    NSMutableSet *visited = [NSMutableSet set];
-    BOOL truncated = NO;
-    NSUInteger cursor = 0;
-    CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 3.0;
-    while (cursor < queue.count && out.count < (NSUInteger)limit &&
-           CFAbsoluteTimeGetCurrent() < deadline) {
-        NSDictionary *entry = queue[cursor++];
-        AXUIElementRef e = (AXUIElementRef)entry[@"node"];
-        if ([visited containsObject:(id)e])
-            continue;
-        [visited addObject:(id)e];
-        AXUIElementSetMessagingTimeout(e, 0.15);
-        NSString *eid = [NSString stringWithFormat:@"%lu", (unsigned long)elements.count];
-        NSDictionary *n = node(e, eid, entry[@"parent"]);
-        if (!n) {
-            truncated = YES;
-            continue;
+typedef struct {
+    NSDictionary *options;
+    NSMutableArray *out;
+    NSMutableSet *visited;
+    NSMapTable *previous;
+    CFAbsoluteTime deadline;
+    BOOL truncated;
+} CMTraversal;
+
+static BOOL traversalFull(CMTraversal *t) {
+    return t->out.count >= [t->options[@"limit"] unsignedIntegerValue] ||
+           t->visited.count >= 5000 || CFAbsoluteTimeGetCurrent() >= t->deadline;
+}
+static void visit(AXUIElementRef e, NSString *parent, NSInteger depth, CMTraversal *t) {
+    if ([t->visited containsObject:(id)e])
+        return;
+    if (traversalFull(t)) {
+        t->truncated = YES;
+        return;
+    }
+    [t->visited addObject:(id)e];
+    AXUIElementSetMessagingTimeout(e, 0.15);
+    NSString *eid = [t->previous objectForKey:(id)e];
+    if (!eid)
+        eid = [NSString stringWithFormat:@"e%lu", nextElement++];
+    NSDictionary *n = node(e, eid, parent);
+    if (!n) {
+        t->truncated = YES;
+    } else {
+        BOOL include = YES;
+        NSDictionary *r = t->options[@"region"];
+        if (r) {
+            CGRect area = CGRectMake([r[@"x"] doubleValue], [r[@"y"] doubleValue],
+                                     [r[@"width"] doubleValue], [r[@"height"] doubleValue]);
+            include = CGRectIntersectsRect(area, bounds(e));
+            if (!include && ([n[@"role"] isEqualToString:@"AXRow"] || [n[@"role"] isEqualToString:@"AXCell"]))
+                return;
         }
-        [elements addObject:(id)e];
-        [out addObject:n];
-        CFIndex count = 0;
-        if (AXUIElementGetAttributeValueCount(e, kAXChildrenAttribute, &count) == kAXErrorSuccess &&
-            count > 0) {
-            CFArrayRef children = NULL;
-            CFIndex take = MIN(count, MAX(0, limit - (NSInteger)queue.count));
-            if (take < count)
-                truncated = YES;
-            if (take > 0 && AXUIElementCopyAttributeValues(e, kAXChildrenAttribute, 0, take,
-                                                           &children) == kAXErrorSuccess) {
-                for (id child in (NSArray *)children)
-                    [queue addObject:@{@"node" : child, @"parent" : eid}];
-                CFRelease(children);
-            }
+        NSString *role = t->options[@"role"], *query = t->options[@"text"];
+        if (role.length && [role caseInsensitiveCompare:n[@"role"]] != NSOrderedSame)
+            include = NO;
+        if (query.length && [n[@"name"] rangeOfString:query].location == NSNotFound &&
+            [n[@"value"] rangeOfString:query].location == NSNotFound)
+            include = NO;
+        if ([t->options[@"compact"] boolValue] && ![n[@"name"] length] && ![n[@"value"] length] &&
+            ![n[@"focused"] boolValue] &&
+            [@[@"AXGroup", @"AXLayoutArea", @"AXScrollArea"] containsObject:n[@"role"]])
+            include = NO;
+        if (include) {
+            elements[eid] = (id)e;
+            [t->out addObject:n];
+            parent = eid;
         }
     }
-    return @{@"elements" : out, @"truncated" : @((BOOL)(truncated || cursor < queue.count))};
+    CFIndex count = 0;
+    AXError status = AXUIElementGetAttributeValueCount(e, kAXChildrenAttribute, &count);
+    if (status == kAXErrorAttributeUnsupported || (status == kAXErrorSuccess && count == 0))
+        return;
+    if (status != kAXErrorSuccess || depth >= [t->options[@"max_depth"] integerValue]) {
+        t->truncated = YES;
+        return;
+    }
+    for (CFIndex offset = 0; offset < count; offset += 32) {
+        if (traversalFull(t)) { t->truncated = YES; break; }
+        CFArrayRef children = NULL;
+        if (AXUIElementCopyAttributeValues(e, kAXChildrenAttribute, offset, MIN(32, count-offset), &children) != kAXErrorSuccess) {
+            t->truncated = YES;
+            break;
+        }
+        for (id child in (NSArray *)children) {
+            if (traversalFull(t)) { t->truncated = YES; break; }
+            visit((AXUIElementRef)child, parent, depth + 1, t);
+        }
+        CFRelease(children);
+    }
+}
+static NSDictionary *observe(NSDictionary *args) {
+    NSDictionary *options = args[@"options"];
+    NSString *rootID = options[@"root_id"];
+    AXUIElementRef root = rootID.length ? (AXUIElementRef)elements[rootID] : windowRef(args[@"window_id"]);
+    if (!root)
+        return failure(rootID.length ? @"stale_snapshot" : @"window_not_found", @"observation root");
+    CFRetain(root);
+    NSMapTable *previous = [NSMapTable strongToStrongObjectsMapTable];
+    for (NSString *key in elements)
+        [previous setObject:key forKey:elements[key]];
+    [elements release];
+    elements = [NSMutableDictionary new];
+    CMTraversal t = {options, [NSMutableArray array], [NSMutableSet set], previous,
+                     CFAbsoluteTimeGetCurrent() + 3.0, NO};
+    visit(root, @"", 0, &t);
+    CFRelease(root);
+    return @{@"elements": t.out, @"truncated": @(t.truncated)};
 }
 static CGKeyCode keyCode(NSString *key) {
     NSDictionary *map = @{
@@ -374,10 +461,10 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
         return node((AXUIElementRef)focused, @"", @"") ?: @{};
     }
     if ([op isEqualToString:@"resolve"]) {
-        NSUInteger i = [args[@"element_id"] integerValue];
-        if (i >= elements.count)
+        AXUIElementRef e = (AXUIElementRef)elements[args[@"element_id"]];
+        if (!e)
             return failure(@"stale_snapshot", @"element");
-        NSDictionary *n = node((AXUIElementRef)elements[i], args[@"element_id"], @"");
+        NSDictionary *n = node(e, args[@"element_id"], @"");
         return n ?: failure(@"stale_snapshot", @"element");
     }
     if ([op isEqualToString:@"window"]) {

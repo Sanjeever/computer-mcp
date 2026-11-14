@@ -61,7 +61,7 @@ func (b *macBackend) Windows() ([]Window, error) {
 	err := macCall("windows", nil, &r)
 	return r.Windows, err
 }
-func (b *macBackend) Observe(ctx context.Context, w Window, limit int) ([]Element, bool, error) {
+func (b *macBackend) Observe(ctx context.Context, w Window, options ObserveOptions) ([]Element, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
@@ -69,7 +69,7 @@ func (b *macBackend) Observe(ctx context.Context, w Window, limit int) ([]Elemen
 		Elements  []Element `json:"elements"`
 		Truncated bool      `json:"truncated"`
 	}
-	err := macCall("observe", map[string]any{"window_id": w.ID, "limit": limit}, &r)
+	err := macCall("observe", map[string]any{"window_id": w.ID, "options": options}, &r)
 	return r.Elements, r.Truncated, err
 }
 func (b *macBackend) Resolve(id string) (Element, error) {

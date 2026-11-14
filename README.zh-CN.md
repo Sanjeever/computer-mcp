@@ -66,6 +66,10 @@ Windows 应运行在目标用户的交互式会话中。UIPI 可能阻止向管�
 
 激活会等待窗口焦点确认，默认 2,000 毫秒，可通过 `timeout_ms` 设置，最多 10,000。失败返回 `activation_failed`，已识别的模态阻塞返回 `window_blocked`，不再将 `active:false` 作为成功结果。`computer_wait` 还支持 `active:true`、`focused:true` 和精确 `focus_name`，可与 `text` 组合。键盘工具支持 `auto_activate:true` 和 `focus_name`，在发送前准备目标，共享默认 2,000 毫秒的准备预算。输入发送一次，成功表示已投递，不表示应用处理完成。基于快照的鼠标输入仍要求显式激活后重新观察。
 
+观察支持 `text`、`role`、`region`、`compact:true` 和 `max_depth`（1～64）。不截图时也可用 `region` 筛选相交的语义元素。通过 `root_id` 和当前 `snapshot_id` 可限定子树。遍历先访问后代再访问兄弟节点，最多扫描 5,000 个节点，保留不超过 `max_elements` 个可操作引用。macOS 还会读取关联 AX 标签及有界的行内后代文本，补充列表内容。
+
+传入同窗口、同筛选条件的最新观察 ID `since_snapshot_id` 可获取差异。此时 `elements` 包含新增和变化节点，移除 `removed_element_ids` 后按 `element_order` 重建当前有界结果。`diff_complete:false` 表示至少一次观察发生截断，节点从结果消失不代表从应用消失。后续操作均须使用新 `snapshot_id`，未变化的元素也一样。原生身份变化表示为删除和新增。差异减少响应大小，不减少原生遍历工作。
+
 ## 限制与行为
 
 - 默认观察 200 个元素，最多 1,000 个。树遍历预算为三秒，未完成时返回 `truncated`。名称和值均有长度上限，原生 provider 阻塞可能超出遍历预算。

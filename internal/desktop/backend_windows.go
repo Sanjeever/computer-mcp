@@ -25,7 +25,7 @@ type winBackend struct {
 	automation *w.IUIAutomation
 	walker     *w.IUIAutomationTreeWalker
 	cache      *w.IUIAutomationCacheRequest
-	elements   []*w.IUIAutomationElement
+	elements   map[string]*w.IUIAutomationElement
 }
 
 func hr(code w.HRESULT) error {
@@ -232,71 +232,120 @@ func cachedNode(e *w.IUIAutomationElement, id, parent string) (Element, error) {
 	}
 	return n, nil
 }
-func (b *winBackend) Observe(ctx context.Context, target Window, limit int) ([]Element, bool, error) {
-	b.clear()
+func runtimeID(e *w.IUIAutomationElement) (string, error) {
+	var array *w.SAFEARRAY
+	if err := hr(e.GetRuntimeId(&array)); err != nil {
+		return "", err
+	}
+	if array == nil {
+		return "", Fail("native_error", "UIA runtime ID is unavailable")
+	}
+	defer w.SafeArrayDestroy(array)
+	var lower, upper int32
+	if err := hr(w.SafeArrayGetLBound(array, 1, &lower)); err != nil {
+		return "", err
+	}
+	if err := hr(w.SafeArrayGetUBound(array, 1, &upper)); err != nil {
+		return "", err
+	}
+	if upper < lower || upper-lower > 128 {
+		return "", Fail("native_error", "invalid UIA runtime ID")
+	}
+	var data *int32
+	if err := hr(w.SafeArrayAccessData(array, unsafe.Pointer(&data))); err != nil {
+		return "", err
+	}
+	id := fmt.Sprint(unsafe.Slice(data, int(upper-lower+1)))
+	w.SafeArrayUnaccessData(array)
+	return id, nil
+}
+func (b *winBackend) Observe(ctx context.Context, target Window, options ObserveOptions) ([]Element, bool, error) {
 	h, err := hwnd(target.ID)
 	if err != nil {
 		return nil, false, err
 	}
 	var root *w.IUIAutomationElement
-	if err = hr(b.automation.ElementFromHandleBuildCache(h, b.cache, &root)); err != nil {
+	if options.RootID != "" {
+		previous := b.elements[options.RootID]
+		if previous == nil {
+			return nil, false, Fail("stale_snapshot", "subtree root")
+		}
+		err = hr(previous.BuildUpdatedCache(b.cache, &root))
+	} else {
+		err = hr(b.automation.ElementFromHandleBuildCache(h, b.cache, &root))
+	}
+	if err != nil {
 		return nil, false, err
 	}
-	type entry struct {
-		e      *w.IUIAutomationElement
-		parent string
-	}
-	queue := []entry{{root, ""}}
-	b.elements = append(b.elements, root)
+	defer root.Release()
+	b.clear()
+	b.elements = map[string]*w.IUIAutomationElement{}
 	out := []Element{}
 	truncated := false
 	deadline := time.Now().Add(3 * time.Second)
-	for cursor := 0; cursor < len(queue); cursor++ {
-		if ctx.Err() != nil {
-			return nil, false, ctx.Err()
-		}
-		if time.Now().After(deadline) {
+	visited := map[string]bool{}
+	full := func() bool {
+		return len(out) >= options.Limit || len(visited) >= 5000 || time.Now().After(deadline) || ctx.Err() != nil
+	}
+	var visit func(*w.IUIAutomationElement, string, int)
+	visit = func(e *w.IUIAutomationElement, parent string, depth int) {
+		if full() {
 			truncated = true
-			break
+			return
 		}
-		item := queue[cursor]
-		id := strconv.Itoa(cursor)
-		n, err := cachedNode(item.e, id, item.parent)
+		id, err := runtimeID(e)
 		if err != nil {
 			truncated = true
-			continue
+			return
 		}
-		out = append(out, n)
-		var child *w.IUIAutomationElement
-		if b.walker.GetFirstChildElementBuildCache(item.e, b.cache, &child) < 0 {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+		n, err := cachedNode(e, id, parent)
+		if err != nil {
 			truncated = true
-			continue
+		} else if options.Includes(n) {
+			e.AddRef()
+			b.elements[id] = e
+			out = append(out, n)
+			parent = id
+		}
+		var child *w.IUIAutomationElement
+		if b.walker.GetFirstChildElementBuildCache(e, b.cache, &child) < 0 {
+			truncated = true
+			return
 		}
 		for child != nil {
-			if len(queue) >= limit || time.Now().After(deadline) || ctx.Err() != nil {
+			if full() || depth >= options.MaxDepth {
 				child.Release()
 				truncated = true
-				break
+				return
 			}
-			queue = append(queue, entry{child, id})
-			b.elements = append(b.elements, child)
+			visit(child, parent, depth+1)
 			var next *w.IUIAutomationElement
-			if b.walker.GetNextSiblingElementBuildCache(child, b.cache, &next) < 0 {
+			code := b.walker.GetNextSiblingElementBuildCache(child, b.cache, &next)
+			child.Release()
+			if code < 0 {
 				truncated = true
-				break
+				return
 			}
 			child = next
 		}
 	}
+	visit(root, "", 0)
+	if err := ctx.Err(); err != nil {
+		return nil, truncated, err
+	}
 	return out, truncated, nil
 }
 func (b *winBackend) Resolve(id string) (Element, error) {
-	i, err := strconv.Atoi(id)
-	if err != nil || i < 0 || i >= len(b.elements) {
+	e := b.elements[id]
+	if e == nil {
 		return Element{}, Fail("stale_snapshot", id)
 	}
 	var updated *w.IUIAutomationElement
-	if b.elements[i].BuildUpdatedCache(b.cache, &updated) < 0 {
+	if e.BuildUpdatedCache(b.cache, &updated) < 0 {
 		return Element{}, Fail("stale_snapshot", id)
 	}
 	defer updated.Release()
