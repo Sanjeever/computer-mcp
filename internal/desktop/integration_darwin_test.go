@@ -165,6 +165,118 @@ func TestNativeFixture(t *testing.T) {
 	if !stable {
 		t.Fatal("window ID changed after title update")
 	}
+	rows, _, err := b.Observe(ctx, target, ObserveOptions{Limit: 10, MaxDepth: 64, Text: "File 000.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundRow := false
+	for _, n := range rows {
+		if n.Role == "AXRow" && strings.Contains(n.Name, "File 000.txt") {
+			foundRow = true
+		}
+	}
+	if !foundRow {
+		t.Fatalf("list row text was not extracted: %+v", rows)
+	}
+	clickNamed := func(name string) {
+		t.Helper()
+		windows, err := b.Windows()
+		if err != nil {
+			t.Fatal(err)
+		}
+		active := false
+		for _, w := range windows {
+			if w.ID == target.ID && w.Active {
+				active = true
+				target = w
+			}
+		}
+		if !active {
+			t.Fatal("fixture lost focus before test input")
+		}
+		nodes, _, err := b.Observe(ctx, target, ObserveOptions{Limit: 100, MaxDepth: 64})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range nodes {
+			if n.Name == name {
+				if err := b.CheckPoint(target, n.Bounds.Center()); err != nil {
+					t.Fatal(err)
+				}
+				if err := b.Input(ctx, "click", Input{Point: n.Bounds.Center(), Button: "left", Count: 1}); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+		t.Fatalf("fixture button %q missing", name)
+	}
+	clickNamed("Cycle")
+	missing, restored := false, false
+	for i := 0; i < 40; i++ {
+		windows, err = b.Windows()
+		if err != nil {
+			t.Fatal(err)
+		}
+		present := false
+		for _, w := range windows {
+			if w.ID == target.ID {
+				present = true
+				target = w
+			}
+		}
+		if !present {
+			missing = true
+		}
+		if missing && present && target.Active {
+			restored = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !restored {
+		for _, w := range windows {
+			if w.PID == target.PID {
+				t.Logf("fixture after cycle: id=%s active=%v, expected=%s missing=%v", w.ID, w.Active, target.ID, missing)
+			}
+		}
+		t.Fatal("window identity did not survive temporary disappearance")
+	}
+	clickNamed("Modal")
+	blocked, unblocked := false, false
+	for i := 0; i < 50; i++ {
+		windows, err = b.Windows()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range windows {
+			if w.ID != target.ID {
+				continue
+			}
+			target = w
+			if w.BlockedBy != "" {
+				if !blocked {
+					if err := b.Window(w, "activate", Rect{}); err == nil {
+						t.Fatal("activation accepted through modal sheet")
+					}
+				}
+				blocked = true
+			} else if blocked && w.Active {
+				unblocked = true
+			}
+		}
+		if unblocked {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !unblocked {
+		t.Fatal("modal blocker was not detected and cleared")
+	}
+	nodes, _, err = b.Observe(ctx, target, ObserveOptions{Limit: 100, MaxDepth: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, n := range nodes {
 		if n.Name == "Fixture cover" {
 			if err := b.CheckPoint(target, n.Bounds.Center()); err != nil {

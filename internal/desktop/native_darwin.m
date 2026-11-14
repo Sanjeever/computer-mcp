@@ -62,8 +62,9 @@ static NSString *blockedBy(AXUIElementRef w) {
     }
     return @"";
 }
-static NSNumber *windowNumber(AXUIElementRef w, pid_t pid, NSArray *screenWindows) {
+static NSNumber *windowNumber(AXUIElementRef w, pid_t pid, NSArray *screenWindows, BOOL *ambiguous) {
     CGRect r = bounds(w);
+    NSString *title = text(attr(w, kAXTitleAttribute));
     NSMutableArray *matches = [NSMutableArray array];
     for (NSDictionary *info in screenWindows) {
         CGRect candidate;
@@ -71,26 +72,22 @@ static NSNumber *windowNumber(AXUIElementRef w, pid_t pid, NSArray *screenWindow
             [info[(id)kCGWindowLayer] intValue] != 0 ||
             !CGRectMakeWithDictionaryRepresentation((CFDictionaryRef)info[(id)kCGWindowBounds], &candidate))
             continue;
+        NSString *candidateTitle = info[(id)kCGWindowName];
+        if (title.length && candidateTitle.length && ![candidateTitle isEqualToString:title])
+            continue;
         if (fabs(r.origin.x - candidate.origin.x) <= 2 &&
             fabs(r.origin.y - candidate.origin.y) <= 2 &&
             fabs(r.size.width - candidate.size.width) <= 2 &&
             fabs(r.size.height - candidate.size.height) <= 2)
             [matches addObject:info];
     }
-    if (matches.count > 1) {
-        NSString *title = text(attr(w, kAXTitleAttribute));
-        if (!title.length)
-            return nil;
-        NSIndexSet *different = [matches indexesOfObjectsPassingTest:^BOOL(NSDictionary *info, NSUInteger i, BOOL *stop) {
-            return ![info[(id)kCGWindowName] isEqualToString:title];
-        }];
-        [matches removeObjectsAtIndexes:different];
-    }
+    *ambiguous = matches.count > 1;
     return matches.count == 1 ? matches[0][(id)kCGWindowNumber] : nil;
 }
 static NSString *rowText(AXUIElementRef e, int depth, int *budget) {
     if (depth == 0 || (*budget)-- <= 0)
         return @"";
+    AXUIElementSetMessagingTimeout(e, 0.15);
     if ([text(attr(e, kAXSubroleAttribute)) isEqualToString:@"AXSecureTextField"])
         return @"";
     NSString *value = text(attr(e, kAXValueAttribute));
@@ -134,7 +131,7 @@ static NSDictionary *node(AXUIElementRef e, NSString *eid, NSString *parent) {
         title = text(v[2]);
     if (!title.length && !password) {
         id label = attr(e, kAXTitleUIElementAttribute);
-        if (label) {
+        if (label && ![text(attr((AXUIElementRef)label, kAXSubroleAttribute)) isEqualToString:@"AXSecureTextField"]) {
             title = text(attr((AXUIElementRef)label, kAXValueAttribute));
             if (!title.length)
                 title = text(attr((AXUIElementRef)label, kAXTitleAttribute));
@@ -186,6 +183,8 @@ static NSDictionary *listWindows(void) {
         AXUIElementSetMessagingTimeout(root, 0.15);
         id list = attr(root, kAXWindowsAttribute);
         id focused = attr(root, kAXFocusedWindowAttribute);
+        NSArray *currentWindows = [(NSArray *)CGWindowListCopyWindowInfo(
+            kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements, kCGNullWindowID) autorelease];
         if ([list isKindOfClass:NSArray.class])
             for (id value in list) {
                 AXUIElementRef w = (AXUIElementRef)value;
@@ -195,7 +194,8 @@ static NSDictionary *listWindows(void) {
                 if (r.size.width <= 0 || r.size.height <= 0)
                     continue;
                 NSString *key = nil;
-                NSNumber *number = windowNumber(w, pid, screenWindows);
+                BOOL ambiguous = NO;
+                NSNumber *number = windowNumber(w, pid, currentWindows, &ambiguous);
                 for (NSString *existing in windows) {
                     pid_t previousPID = 0;
                     AXUIElementGetPid((AXUIElementRef)windows[existing], &previousPID);
@@ -205,11 +205,27 @@ static NSDictionary *listWindows(void) {
                         break;
                     }
                 }
+                if (!key && !number && !ambiguous)
+                    continue;
                 if (!key)
                     key = [NSString stringWithFormat:@"%d:%lu", pid, nextWindow++];
+                if (!number && windowNumbers[key]) {
+                    for (NSDictionary *info in screenWindows) {
+                        if ([windowNumbers[key] isEqual:info[(id)kCGWindowNumber]] &&
+                            pid == [info[(id)kCGWindowOwnerPID] intValue]) {
+                            number = windowNumbers[key];
+                            break;
+                        }
+                    }
+                }
                 fresh[key] = value;
                 if (number)
                     numbers[key] = number;
+                NSString *blocker = blockedBy(w);
+                if (!blocker.length && focused && !CFEqual((CFTypeRef)focused, w) &&
+                    [attr((AXUIElementRef)focused, kAXModalAttribute) boolValue]) {
+                    blocker = [@"modal window: " stringByAppendingString:text(attr((AXUIElementRef)focused, kAXTitleAttribute))];
+                }
                 [out addObject:@{
                     @"window_id" : key,
                     @"pid" : @(pid),
@@ -217,7 +233,7 @@ static NSDictionary *listWindows(void) {
                     @"app_id" : app.bundleIdentifier ?: @"",
                     @"title" : text(attr(w, kAXTitleAttribute)),
                     @"bounds" : rect(r),
-                    @"blocked_by" : blockedBy(w),
+                    @"blocked_by" : blocker,
                     @"active" : @((BOOL)(front == pid && focused && CFEqual((CFTypeRef)focused, w)))
                 }];
                 if (out.count >= 512)
@@ -241,8 +257,14 @@ static NSDictionary *listWindows(void) {
                 break;
             }
         }
-        if (!number)
-            live = attr((AXUIElementRef)windows[key], kAXRoleAttribute) != nil;
+        if (!live) {
+            NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+            CFTypeRef role = NULL;
+            AXUIElementSetMessagingTimeout((AXUIElementRef)windows[key], 0.15);
+            AXError status = AXUIElementCopyAttributeValue((AXUIElementRef)windows[key], kAXRoleAttribute, &role);
+            if (role) CFRelease(role);
+            live = app && !app.terminated && (number || status != kAXErrorInvalidUIElement);
+        }
         if (live) {
             fresh[key] = windows[key];
             if (number)

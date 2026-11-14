@@ -13,7 +13,7 @@
 }
 @end
 
-@interface Fixture : NSObject <NSApplicationDelegate>
+@interface Fixture : NSObject <NSApplicationDelegate, NSTableViewDataSource>
 @property(retain) NSWindow *window;
 @property(retain) NSTextField *field;
 @property(retain) NSWindow *cover;
@@ -39,6 +39,22 @@
     cover.frame = NSMakeRect(300, 100, 200, 40);
     [self.window.contentView addSubview:cover];
     [self.window.contentView addSubview:[[FixtureCanvas alloc] initWithFrame:NSMakeRect(40, 30, 500, 45)]];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(40, 0, 500, 25)];
+    NSTableView *table = [[NSTableView alloc] initWithFrame:scroll.bounds];
+    NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:@"file"];
+    column.width = 480;
+    [table addTableColumn:column];
+    table.headerView = nil;
+    table.rowHeight = 20;
+    table.dataSource = self;
+    scroll.documentView = table;
+    NSButton *cycle = [NSButton buttonWithTitle:@"Cycle" target:self action:@selector(cycle:)];
+    cycle.frame = NSMakeRect(510, 100, 80, 40);
+    [self.window.contentView addSubview:cycle];
+    NSButton *modal = [NSButton buttonWithTitle:@"Modal" target:self action:@selector(modal:)];
+    modal.frame = NSMakeRect(510, 145, 80, 35);
+    [self.window.contentView addSubview:modal];
+    [self.window.contentView addSubview:scroll];
     [self.window makeKeyAndOrderFront:nil];
     [self.window makeFirstResponder:self.field];
     [NSApp activateIgnoringOtherApps:YES];
@@ -54,6 +70,27 @@
     self.cover.backgroundColor = NSColor.redColor;
     [self.cover setFrame:self.window.frame display:YES];
     [self.cover makeKeyAndOrderFront:nil];
+}
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView { return 300; }
+- (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row {
+    return [NSString stringWithFormat:@"File %03ld.txt", (long)row];
+}
+- (void)cycle:(id)sender {
+    [self.window orderOut:nil];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        [self.window makeKeyAndOrderFront:nil];
+        [NSApp activateIgnoringOtherApps:YES];
+    });
+}
+- (void)modal:(id)sender {
+    NSAlert *alert = [NSAlert new];
+    alert.messageText = @"Fixture modal";
+    [alert beginSheetModalForWindow:self.window completionHandler:nil];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [self.window endSheet:alert.window];
+        [alert.window orderOut:nil];
+        [alert release];
+    });
 }
 @end
 int main(void) {
