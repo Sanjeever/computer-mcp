@@ -560,6 +560,7 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
         if (!event)
             return failure(@"native_error", @"create mouse event");
         CGEventSetIntegerValueField(event, kCGMouseEventClickState, [args[@"count"] intValue]);
+        CGEventSetFlags(event, 0);
         CGEventPost(kCGHIDEventTap, event);
         CFRelease(event);
         return @{};
@@ -576,6 +577,7 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
                 return failure(@"native_error", @"create keyboard event");
             }
             CGEventKeyboardSetUnicodeString(event, length, chars);
+            CGEventSetFlags(event, 0);
             CGEventPost(kCGHIDEventTap, event);
             CFRelease(event);
         }
@@ -600,7 +602,7 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
             CGEventRef event = CGEventCreateKeyboardEvent(NULL, code, down);
             if (!event)
                 return failure(@"native_error", @"create keyboard event");
-            CGEventSetFlags(event, flags);
+            CGEventSetFlags(event, down ? flags : 0);
             CGEventPost(kCGHIDEventTap, event);
             CFRelease(event);
         }

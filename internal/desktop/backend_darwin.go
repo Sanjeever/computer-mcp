@@ -152,14 +152,21 @@ func (b *macBackend) Input(ctx context.Context, op string, in Input) error {
 	switch op {
 	case "type":
 		chars := []rune(in.Text)
-		for start := 0; start < len(chars); start += 20 {
+		for start := 0; start < len(chars); {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			end := min(start+20, len(chars))
+			end := start
+			for end < len(chars) && end-start < 20 && chars[end] != '\n' && chars[end] != '\r' && chars[end] != '\t' {
+				end++
+			}
+			if end == start {
+				end++
+			}
 			if err := macCall("type", map[string]any{"text": string(chars[start:end])}, nil); err != nil {
 				return err
 			}
+			start = end
 		}
 		return nil
 	case "drag":

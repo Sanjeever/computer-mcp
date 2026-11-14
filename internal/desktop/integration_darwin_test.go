@@ -211,6 +211,99 @@ func TestNativeFixture(t *testing.T) {
 		}
 		t.Fatalf("fixture button %q missing", name)
 	}
+	t.Run("multiline editing", func(t *testing.T) {
+		original := target
+		defer func() {
+			target = original
+			if err := b.Window(target, "activate", Rect{}); err != nil {
+				t.Error(err)
+			}
+		}()
+		clickNamed("Editor")
+		for i := 0; i < 40; i++ {
+			windows, err := b.Windows()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range windows {
+				if w.PID == original.PID && w.Title == "Computer MCP Fixture Editor" && w.Active {
+					target = w
+				}
+			}
+			if target.ID != original.ID {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if target.ID == original.ID {
+			t.Fatal("editor did not become active")
+		}
+		input := func(op string, in Input) {
+			t.Helper()
+			windows, err := b.Windows()
+			if err != nil {
+				t.Fatal(err)
+			}
+			active := false
+			for _, w := range windows {
+				active = active || (w.ID == target.ID && w.Active)
+			}
+			if !active {
+				t.Fatal("editor lost focus; refusing input")
+			}
+			if err := b.Input(ctx, op, in); err != nil {
+				t.Fatal(err)
+			}
+		}
+		check := func(want string) {
+			t.Helper()
+			var got string
+			for i := 0; i < 20; i++ {
+				nodes, _, err := b.Observe(ctx, target, ObserveOptions{Limit: 100, MaxDepth: 64})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, n := range nodes {
+					if n.Name == "Fixture editor" {
+						got = n.Value
+						if got == want {
+							return
+						}
+					}
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			t.Fatalf("editor value\n got: %q\nwant: %q", got, want)
+		}
+		const document = "周末出行清单\n\n证件\n· 身份证\n· 护照\n· 驾驶证\n· 社保卡\n· 学生证\n\n衣物\n· 短袖 T 恤\n· 长裤\n· 外套\n· 内衣\n· 袜子\n· 运动鞋\n\n电子设备\n· 手机\n· 充电器\n· 充电宝\n· 移动电源\n· 笔记本电脑\n· 相机\n· 耳机"
+		for i := 0; i < 3; i++ {
+			if i > 0 {
+				input("key", Input{Keys: []string{"meta", "a"}})
+			}
+			input("type", Input{Text: document})
+			check(document)
+			input("key", Input{Keys: []string{"meta", "up"}})
+			input("type", Input{Text: "衣物\n"})
+			check("衣物\n" + document)
+			input("type", Input{Text: "12"})
+			check("衣物\n12" + document)
+			input("key", Input{Keys: []string{"shift", "right"}})
+			input("type", Input{Text: "✅"})
+			check("衣物\n12✅" + strings.TrimPrefix(document, "周"))
+		}
+		for _, value := range []string{
+			"\n开头\n\n结尾\n",
+			"开始\t中间\t结束",
+			strings.Repeat("😀", 24) + " e\u0301 ✅",
+		} {
+			input("key", Input{Keys: []string{"meta", "a"}})
+			input("type", Input{Text: value})
+			check(value)
+		}
+	})
+	if t.Failed() {
+		return
+	}
 	clickNamed("Cycle")
 	missing, restored := false, false
 	for i := 0; i < 40; i++ {

@@ -17,9 +17,16 @@
 @property(retain) NSWindow *window;
 @property(retain) NSTextField *field;
 @property(retain) NSWindow *cover;
+@property(retain) NSWindow *editorWindow;
 @end
 @implementation Fixture
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    NSMenu *menu = [NSMenu new];
+    NSMenuItem *edit = [menu addItemWithTitle:@"Edit" action:nil keyEquivalent:@""];
+    edit.submenu = [NSMenu new];
+    [edit.submenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [edit.submenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+    NSApp.mainMenu = menu;
     self.window =
         [[NSWindow alloc] initWithContentRect:NSMakeRect(150, 150, 600, 300)
                                     styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -54,6 +61,9 @@
     NSButton *modal = [NSButton buttonWithTitle:@"Modal" target:self action:@selector(modal:)];
     modal.frame = NSMakeRect(510, 145, 80, 35);
     [self.window.contentView addSubview:modal];
+    NSButton *editor = [NSButton buttonWithTitle:@"Editor" target:self action:@selector(showEditor:)];
+    editor.frame = NSMakeRect(510, 55, 80, 35);
+    [self.window.contentView addSubview:editor];
     [self.window.contentView addSubview:scroll];
     [self.window makeKeyAndOrderFront:nil];
     [self.window makeFirstResponder:self.field];
@@ -62,6 +72,27 @@
 - (void)submit:(id)sender {
     self.field.stringValue = @"submitted";
     self.window.title = @"Computer MCP Native Fixture Updated";
+}
+- (void)showEditor:(id)sender {
+    self.editorWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(250, 200, 600, 500)
+        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
+        backing:NSBackingStoreBuffered defer:NO];
+    self.editorWindow.title = @"Computer MCP Fixture Editor";
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:self.editorWindow.contentView.bounds];
+    scroll.hasVerticalScroller = YES;
+    scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    NSTextView *editor = [[NSTextView alloc] initWithFrame:scroll.bounds];
+    editor.accessibilityLabel = @"Fixture editor";
+    editor.verticallyResizable = YES;
+    editor.autoresizingMask = NSViewWidthSizable;
+    editor.textContainer.widthTracksTextView = YES;
+    editor.automaticQuoteSubstitutionEnabled = NO;
+    editor.automaticDashSubstitutionEnabled = NO;
+    editor.automaticTextReplacementEnabled = NO;
+    scroll.documentView = editor;
+    self.editorWindow.contentView = scroll;
+    [self.editorWindow makeKeyAndOrderFront:nil];
+    [self.editorWindow makeFirstResponder:editor];
 }
 - (void)showCover:(id)sender {
     self.cover = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 600, 300)

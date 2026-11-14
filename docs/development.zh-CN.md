@@ -40,7 +40,7 @@ Go 测试覆盖快照身份、失效目标拒绝、图片坐标映射、输入�
 
 原生 UI 验收应在交互式会话中使用专用测试窗口，覆盖 Unicode 输入、点击、键盘选择、滚动、拖动、截图、焦点拒绝及失效引用。多种缩放比例与副显示器须分别验证后，才能宣称相应配置已验证。不要在自动化测试中向个人应用发送输入。
 
-macOS 设置上述 cgo 参数后，可运行 `COMPUTER_MCP_NATIVE_TEST=1 go test -v ./internal/desktop`。该显式启用的测试创建专用 Cocoa 窗口，验证焦点、英文／中文／emoji 输入、点击、子树身份、300 行表格文本提取、改标题和隐藏恢复后的窗口 ID、模态阻塞、遮挡下的窗口与屏幕截图、裁剪尺寸、落点拒绝及自绘控件的中英文 Vision OCR。缺少辅助功能或屏幕录制权限时，测试会报告跳过原因。目前原生交互夹具覆盖 macOS，Windows CI 执行原生状态与 stdio 检查。Windows 静态检查不能证明 PrintWindow 或 UIA 运行时兼容性。
+macOS 设置上述 cgo 参数后，可运行 `COMPUTER_MCP_NATIVE_TEST=1 go test -v ./internal/desktop`。该显式启用的测试创建专用 Cocoa 窗口，验证焦点、英文／中文／emoji 输入、多行富文本编辑（含开头换行、制表符、选区替换及快捷键后的插入）、点击、子树身份、300 行表格文本提取、改标题和隐藏恢复后的窗口 ID、模态阻塞、遮挡下的窗口与屏幕截图、裁剪尺寸、落点拒绝及自绘控件的中英文 Vision OCR。缺少辅助功能或屏幕录制权限时，测试会报告跳过原因。目前原生交互夹具覆盖 macOS，Windows CI 执行原生状态与 stdio 检查。Windows 静态检查不能证明 PrintWindow 或 UIA 运行时兼容性。
 
 ## 发布
 
