@@ -1,5 +1,7 @@
 # Computer MCP
 
+[简体中文](AGENTS.zh-CN.md)
+
 Read [README.md](README.md) for the user contract and [docs/development.md](docs/development.md) for build, verification, and release procedures. English is the primary documentation language; maintain the corresponding Simplified Chinese files for user-facing changes. Use English Conventional Commits. The project is MIT licensed.
 
 ## Architecture
