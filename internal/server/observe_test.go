@@ -57,3 +57,27 @@ func TestTruncatedDiffIsNotComplete(t *testing.T) {
 		t.Fatalf("truncated diff: %+v", d)
 	}
 }
+
+func TestCaptureModesAndOcclusionGuard(t *testing.T) {
+	s, b := setup()
+	ctx := context.Background()
+	if r := observe(ctx, s, ObserveArgs{Screenshot: true}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	if b.captureMode != "window" || s.snapshot.CaptureMode != "window" {
+		t.Fatal("window capture not selected")
+	}
+	b.pointErr = desktop.Fail("target_obscured", "cover")
+	requireCode(t, click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, ElementID: "0"}), "target_obscured")
+	if b.inputs != 0 {
+		t.Fatal("clicked through cover")
+	}
+	if r := observe(ctx, s, ObserveArgs{Screenshot: true, CaptureMode: "screen"}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	if b.captureMode != "screen" {
+		t.Fatal("explicit screen mode ignored")
+	}
+	requireCode(t, observe(ctx, s, ObserveArgs{CaptureMode: "window"}), "invalid_argument")
+	requireCode(t, observe(ctx, s, ObserveArgs{Desktop: true, CaptureMode: "window"}), "invalid_argument")
+}

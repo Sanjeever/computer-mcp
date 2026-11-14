@@ -115,6 +115,8 @@ type Backend interface {
 	Window(Window, string, Rect) error
 	Input(context.Context, string, Input) error
 	Capture(context.Context, Rect, int) (Capture, error)
+	CaptureWindow(context.Context, Window, Rect, int) (Capture, error)
+	CheckPoint(Window, Point) error
 	Close()
 }
 type Error struct {

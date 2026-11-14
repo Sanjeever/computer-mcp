@@ -3,6 +3,7 @@
 @interface Fixture : NSObject <NSApplicationDelegate>
 @property(retain) NSWindow *window;
 @property(retain) NSTextField *field;
+@property(retain) NSWindow *cover;
 @end
 @implementation Fixture
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
@@ -21,12 +22,24 @@
                                           action:@selector(submit:)];
     button.frame = NSMakeRect(40, 100, 200, 40);
     [self.window.contentView addSubview:button];
+    NSButton *cover = [NSButton buttonWithTitle:@"Fixture cover" target:self action:@selector(showCover:)];
+    cover.frame = NSMakeRect(300, 100, 200, 40);
+    [self.window.contentView addSubview:cover];
     [self.window makeKeyAndOrderFront:nil];
     [self.window makeFirstResponder:self.field];
     [NSApp activateIgnoringOtherApps:YES];
 }
 - (void)submit:(id)sender {
     self.field.stringValue = @"submitted";
+    self.window.title = @"Computer MCP Native Fixture Updated";
+}
+- (void)showCover:(id)sender {
+    self.cover = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 600, 300)
+        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
+    self.cover.title = @"Computer MCP Fixture Cover";
+    self.cover.backgroundColor = NSColor.redColor;
+    [self.cover setFrame:self.window.frame display:YES];
+    [self.cover makeKeyAndOrderFront:nil];
 }
 @end
 int main(void) {

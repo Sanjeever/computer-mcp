@@ -3,6 +3,7 @@ package desktop
 import (
 	"bytes"
 	"context"
+	"image"
 	"image/jpeg"
 	"os"
 	"os/exec"
@@ -148,6 +149,80 @@ func TestNativeFixture(t *testing.T) {
 	if err = b.Input(ctx, "click", Input{Point: button.Bounds.Center(), Button: "left", Count: 1}); err != nil {
 		t.Fatal(err)
 	}
-	waitValue("submitted")
+	nodes = waitValue("submitted")
+	windows, err = b.Windows()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stable := false
+	for _, w := range windows {
+		if w.ID == target.ID && w.Title == "Computer MCP Native Fixture Updated" {
+			stable = true
+			target = w
+		}
+	}
+	if !stable {
+		t.Fatal("window ID changed after title update")
+	}
+	for _, n := range nodes {
+		if n.Name == "Fixture cover" {
+			if err := b.CheckPoint(target, n.Bounds.Center()); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.Input(ctx, "click", Input{Point: n.Bounds.Center(), Button: "left", Count: 1}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var cover Window
+	for i := 0; i < 20; i++ {
+		windows, err = b.Windows()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range windows {
+			if w.PID == target.PID && w.Title == "Computer MCP Fixture Cover" {
+				cover = w
+			}
+		}
+		if cover.ID != "" && cover.Active {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !cover.Active {
+		t.Fatal("dedicated cover did not become active")
+	}
+	if err := b.CheckPoint(target, target.Bounds.Center()); err == nil {
+		t.Fatal("obscured mouse target accepted")
+	}
+	windowCapture, err := b.CaptureWindow(ctx, target, target.Bounds, 600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	windowImage, err := jpeg.Decode(bytes.NewReader(windowCapture.Data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	screenCapture, err := b.Capture(ctx, target.Bounds, 600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screenImage, err := jpeg.Decode(bytes.NewReader(screenCapture.Data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	red := func(img image.Image) bool {
+		r, g, blue, _ := img.At(550, 250).RGBA()
+		return r > 50000 && g < 10000 && blue < 10000
+	}
+	if red(windowImage) || !red(screenImage) {
+		t.Fatal("window capture included cover or screen capture omitted it")
+	}
+	crop := Rect{X: target.Bounds.X + 300, Y: target.Bounds.Y + 100, Width: 200, Height: 150}
+	cropped, err := b.CaptureWindow(ctx, target, crop, 600)
+	if err != nil || cropped.Width != 200 || cropped.Height != 150 {
+		t.Fatalf("window crop: %dx%d, %v", cropped.Width, cropped.Height, err)
+	}
 	t.Logf("native fixture passed: %d elements, JPEG %dx%d (%d bytes), Unicode input and click verified", len(nodes), capture.Width, capture.Height, len(capture.Data))
 }

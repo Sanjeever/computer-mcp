@@ -384,6 +384,10 @@ func (b *winBackend) Capture(ctx context.Context, r Rect, width int) (Capture, e
 	if err != nil {
 		return Capture{}, Fail("native_error", err.Error())
 	}
+	return encodeCapture(source, width)
+}
+func encodeCapture(source image.Image, width int) (Capture, error) {
+	r := Rect{Width: float64(source.Bounds().Dx()), Height: float64(source.Bounds().Dy())}
 	scale := math.Min(1, math.Min(float64(width)/r.Width, 2560/r.Height))
 	ow, oh := max(1, int(r.Width*scale)), max(1, int(r.Height*scale))
 	var img image.Image = source
@@ -393,10 +397,75 @@ func (b *winBackend) Capture(ctx context.Context, r Rect, width int) (Capture, e
 		img = resized
 	}
 	var output bytes.Buffer
-	if err = jpeg.Encode(&output, img, &jpeg.Options{Quality: 80}); err != nil {
+	if err := jpeg.Encode(&output, img, &jpeg.Options{Quality: 80}); err != nil {
 		return Capture{}, err
 	}
 	return Capture{output.Bytes(), ow, oh}, nil
+}
+func (b *winBackend) CheckPoint(target Window, p Point) error {
+	h, err := hwnd(target.ID)
+	if err != nil {
+		return err
+	}
+	hit := w.WindowFromPoint(w.POINT{X: int32(p.X), Y: int32(p.Y)})
+	if hit == 0 || w.GetAncestor(hit, w.GA_ROOT) != h {
+		return Fail("target_obscured", "input point belongs to another window")
+	}
+	return nil
+}
+func (b *winBackend) CaptureWindow(ctx context.Context, target Window, region Rect, width int) (Capture, error) {
+	if err := ctx.Err(); err != nil {
+		return Capture{}, err
+	}
+	h, err := hwnd(target.ID)
+	if err != nil {
+		return Capture{}, err
+	}
+	var rect w.RECT
+	if ok, _ := w.GetWindowRect(h, &rect); ok == 0 {
+		return Capture{}, Fail("native_error", "GetWindowRect failed")
+	}
+	bounds := winRect(rect)
+	if bounds != target.Bounds {
+		return Capture{}, Fail("stale_snapshot", "window geometry changed")
+	}
+	wid, height := int(rect.Right-rect.Left), int(rect.Bottom-rect.Top)
+	if wid <= 0 || height <= 0 || int64(wid)*int64(height) > 40_000_000 {
+		return Capture{}, Fail("invalid_argument", "window exceeds 40 million source pixels")
+	}
+	dc := w.CreateCompatibleDC(0)
+	if dc == 0 {
+		return Capture{}, Fail("native_error", "CreateCompatibleDC failed")
+	}
+	defer w.DeleteDC(dc)
+	info := w.BITMAPINFO{BmiHeader: w.BITMAPINFOHEADER{BiSize: uint32(unsafe.Sizeof(w.BITMAPINFOHEADER{})), BiWidth: int32(wid), BiHeight: -int32(height), BiPlanes: 1, BiBitCount: 32, BiCompression: w.BI_RGB}}
+	var bits unsafe.Pointer
+	bitmap, code := w.CreateDIBSection(dc, &info, w.DIB_RGB_COLORS, unsafe.Pointer(&bits), 0, 0)
+	if bitmap == 0 {
+		return Capture{}, Fail("native_error", fmt.Sprint(code))
+	}
+	defer w.DeleteObject(w.HGDIOBJ(bitmap))
+	previous := w.SelectObject(dc, w.HGDIOBJ(bitmap))
+	defer w.SelectObject(dc, previous)
+	if w.PrintWindow(h, dc, w.PRINT_WINDOW_FLAGS(w.PW_RENDERFULLCONTENT)) == 0 {
+		return Capture{}, Fail("native_error", "PrintWindow failed; no screen fallback was used")
+	}
+	if err := ctx.Err(); err != nil {
+		return Capture{}, err
+	}
+	crop := image.Rect(int(region.X-bounds.X), int(region.Y-bounds.Y), int(region.X-bounds.X+region.Width), int(region.Y-bounds.Y+region.Height))
+	if crop.Empty() || !crop.In(image.Rect(0, 0, wid, height)) {
+		return Capture{}, Fail("invalid_argument", "capture region is outside window")
+	}
+	pixels := unsafe.Slice((*byte)(bits), wid*height*4)
+	source := image.NewRGBA(image.Rect(0, 0, crop.Dx(), crop.Dy()))
+	for y := 0; y < crop.Dy(); y++ {
+		for x := 0; x < crop.Dx(); x++ {
+			i, j := ((y+crop.Min.Y)*wid+x+crop.Min.X)*4, y*source.Stride+x*4
+			source.Pix[j], source.Pix[j+1], source.Pix[j+2], source.Pix[j+3] = pixels[i+2], pixels[i+1], pixels[i], 255
+		}
+	}
+	return encodeCapture(source, width)
 }
 func send(events []w.INPUT) error {
 	if len(events) == 0 {

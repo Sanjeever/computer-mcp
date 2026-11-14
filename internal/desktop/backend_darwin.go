@@ -86,13 +86,27 @@ func (b *macBackend) Window(w Window, action string, r Rect) error {
 	return macCall("window", map[string]any{"window_id": w.ID, "action": action, "bounds": r}, nil)
 }
 func (b *macBackend) Capture(ctx context.Context, r Rect, width int) (Capture, error) {
+	return b.capture(ctx, "", r, width)
+}
+func (b *macBackend) CaptureWindow(ctx context.Context, w Window, r Rect, width int) (Capture, error) {
+	return b.capture(ctx, w.ID, r, width)
+}
+func (b *macBackend) CheckPoint(w Window, p Point) error {
+	return macCall("check_point", map[string]any{"window_id": w.ID, "x": p.X, "y": p.Y}, nil)
+}
+func (b *macBackend) capture(ctx context.Context, id string, r Rect, width int) (Capture, error) {
 	if err := ctx.Err(); err != nil {
 		return Capture{}, err
 	}
 	var length C.size_t
 	var ow, oh C.int
 	var nativeErr *C.char
-	ptr := C.cm_capture(C.double(r.X), C.double(r.Y), C.double(r.Width), C.double(r.Height), C.int(width), &length, &ow, &oh, &nativeErr)
+	var windowID *C.char
+	if id != "" {
+		windowID = C.CString(id)
+		defer C.free(unsafe.Pointer(windowID))
+	}
+	ptr := C.cm_capture(windowID, C.double(r.X), C.double(r.Y), C.double(r.Width), C.double(r.Height), C.int(width), &length, &ow, &oh, &nativeErr)
 	if nativeErr != nil {
 		defer C.free(unsafe.Pointer(nativeErr))
 		return Capture{}, Fail("native_error", C.GoString(nativeErr))

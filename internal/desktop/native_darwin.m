@@ -467,6 +467,22 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
         NSDictionary *n = node(e, args[@"element_id"], @"");
         return n ?: failure(@"stale_snapshot", @"element");
     }
+    if ([op isEqualToString:@"check_point"]) {
+        AXUIElementRef w = windowRef(args[@"window_id"]);
+        if (!w)
+            return failure(@"window_not_found", @"");
+        AXUIElementRef system = AXUIElementCreateSystemWide(), hit = NULL;
+        AXUIElementSetMessagingTimeout(system, 0.15);
+        AXError status = AXUIElementCopyElementAtPosition(system, [args[@"x"] floatValue],
+                                                         [args[@"y"] floatValue], &hit);
+        CFRelease(system);
+        if (status != kAXErrorSuccess || !hit)
+            return failure(@"target_obscured", @"cannot verify window at input point");
+        id owner = attr(hit, kAXWindowAttribute);
+        BOOL matches = CFEqual(hit, w) || (owner && CFEqual((CFTypeRef)owner, w));
+        CFRelease(hit);
+        return matches ? @{} : failure(@"target_obscured", @"input point belongs to another window");
+    }
     if ([op isEqualToString:@"window"]) {
         AXUIElementRef w = windowRef(args[@"window_id"]);
         if (!w)
@@ -635,7 +651,7 @@ void cm_close(void) {
 }
 @end
 
-unsigned char *cm_capture(double x, double y, double width, double height, int max_width,
+unsigned char *cm_capture(const char *window_id, double x, double y, double width, double height, int max_width,
                           size_t *length, int *out_width, int *out_height, char **error) {
     @autoreleasepool {
         if (!CGPreflightScreenCaptureAccess())
@@ -660,13 +676,7 @@ unsigned char *cm_capture(double x, double y, double width, double height, int m
                                        ready->error = [err retain];
                                        dispatch_semaphore_signal(ready->semaphore);
                                      }];
-        if (dispatch_semaphore_wait(ready->semaphore,
-                                    dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0) {
-            [ready release];
-            CGContextRelease(canvas);
-            *error = strdup("ScreenCaptureKit content timeout");
-            return NULL;
-        }
+        dispatch_semaphore_wait(ready->semaphore, DISPATCH_TIME_FOREVER);
         if (ready->error || !ready->content) {
             *error = strdup(ready->error.localizedDescription.UTF8String ?: "no screen content");
             [ready release];
@@ -675,7 +685,49 @@ unsigned char *cm_capture(double x, double y, double width, double height, int m
         }
         CGRect requested = CGRectMake(x, y, width, height);
         BOOL captured = NO;
-        for (SCDisplay *display in ready->content.displays) {
+        if (window_id) {
+            NSString *key = [NSString stringWithUTF8String:window_id];
+            NSNumber *number = windowNumbers[key];
+            SCWindow *target = nil;
+            for (SCWindow *candidate in ready->content.windows) {
+                if (number && candidate.windowID == number.unsignedIntValue) { target = candidate; break; }
+            }
+            if (!target || !CGRectContainsRect(target.frame, requested)) {
+                *error = strdup("window capture identity or geometry changed; observe again");
+            } else if (target.frame.size.width * target.frame.size.height * scale * scale > 40000000) {
+                *error = strdup("window capture exceeds 40 million source pixels");
+            } else {
+                SCContentFilter *filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:target];
+                SCStreamConfiguration *config = [SCStreamConfiguration new];
+                config.width = MAX(1, (size_t)ceil(target.frame.size.width * scale));
+                config.height = MAX(1, (size_t)ceil(target.frame.size.height * scale));
+                config.ignoreShadowsSingleWindow = YES;
+                config.showsCursor = NO;
+                CMCaptureResult *done = [CMCaptureResult new];
+                [SCScreenshotManager captureImageWithFilter:filter configuration:config
+                    completionHandler:^(CGImageRef value, NSError *err) {
+                        if (value) done->image = CGImageRetain(value);
+                        done->error = [err retain];
+                        dispatch_semaphore_signal(done->semaphore);
+                    }];
+                [filter release];
+                [config release];
+                // Keep the serialized worker occupied until ScreenCaptureKit finishes.
+                dispatch_semaphore_wait(done->semaphore, DISPATCH_TIME_FOREVER);
+                if (!done->image) {
+                    *error = strdup(done->error.localizedDescription.UTF8String ?: "window capture failed");
+                } else {
+                    CGRect frame = target.frame;
+                    CGRect dest = CGRectMake((frame.origin.x - x) * scale,
+                        h - (frame.origin.y - y + frame.size.height) * scale,
+                        frame.size.width * scale, frame.size.height * scale);
+                    CGContextDrawImage(canvas, dest, done->image);
+                    captured = YES;
+                }
+                [done release];
+            }
+        }
+        for (SCDisplay *display in window_id ? @[] : ready->content.displays) {
             CGRect frame = CGDisplayBounds(display.displayID),
                    part = CGRectIntersection(requested, frame);
             if (CGRectIsNull(part) || CGRectIsEmpty(part))
@@ -700,12 +752,7 @@ unsigned char *cm_capture(double x, double y, double width, double height, int m
                                       }];
             [filter release];
             [config release];
-            if (dispatch_semaphore_wait(done->semaphore,
-                                        dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0) {
-                [done release];
-                *error = strdup("ScreenCaptureKit image timeout");
-                break;
-            }
+            dispatch_semaphore_wait(done->semaphore, DISPATCH_TIME_FOREVER);
             if (!done->image) {
                 *error =
                     strdup(done->error.localizedDescription.UTF8String ?: "screen capture failed");

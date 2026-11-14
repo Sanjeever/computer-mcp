@@ -10,16 +10,18 @@ import (
 )
 
 type fakeDesktop struct {
-	windows  []desktop.Window
-	nodes    []desktop.Element
-	inputs   int
-	input    desktop.Input
-	calls    int
-	err      error
-	inputErr error
-	displays []desktop.Display
-	focus    desktop.Element
-	activate bool
+	windows     []desktop.Window
+	nodes       []desktop.Element
+	inputs      int
+	input       desktop.Input
+	calls       int
+	err         error
+	inputErr    error
+	displays    []desktop.Display
+	focus       desktop.Element
+	activate    bool
+	pointErr    error
+	captureMode string
 }
 
 func (b *fakeDesktop) Status() (desktop.Status, error) {
@@ -53,9 +55,15 @@ func (b *fakeDesktop) Input(_ context.Context, _ string, in desktop.Input) error
 	return b.inputErr
 }
 func (b *fakeDesktop) Capture(context.Context, desktop.Rect, int) (desktop.Capture, error) {
+	b.captureMode = "screen"
 	return desktop.Capture{Data: []byte("test-image"), Width: 500, Height: 250}, b.err
 }
-func (b *fakeDesktop) Close() {}
+func (b *fakeDesktop) CaptureWindow(context.Context, desktop.Window, desktop.Rect, int) (desktop.Capture, error) {
+	b.captureMode = "window"
+	return desktop.Capture{Data: []byte("test-image"), Width: 500, Height: 250}, b.err
+}
+func (b *fakeDesktop) CheckPoint(desktop.Window, desktop.Point) error { return b.pointErr }
+func (b *fakeDesktop) Close()                                         {}
 func setup() (*state, *fakeDesktop) {
 	b := &fakeDesktop{windows: []desktop.Window{{ID: "w1", PID: 10, Active: true, Bounds: desktop.Rect{X: -100, Y: 100, Width: 1000, Height: 500}}}, nodes: []desktop.Element{{ID: "0", Role: "button", Name: "Save", Enabled: true, Bounds: desktop.Rect{X: 100, Y: 120, Width: 40, Height: 20}}}}
 	return &state{backend: b}, b

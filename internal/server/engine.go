@@ -29,6 +29,7 @@ type Snapshot struct {
 	ImageHeight int                    `json:"image_height,omitempty"`
 	Created     time.Time              `json:"created_at"`
 	Scope       desktop.ObserveOptions `json:"-"`
+	CaptureMode string                 `json:"capture_mode,omitempty"`
 }
 type response struct {
 	value any
@@ -222,6 +223,7 @@ type ObserveArgs struct {
 	Compact         bool          `json:"compact,omitempty"`
 	MaxDepth        int           `json:"max_depth,omitempty"`
 	SinceSnapshotID string        `json:"since_snapshot_id,omitempty"`
+	CaptureMode     string        `json:"capture_mode,omitempty"`
 }
 type ClickArgs struct {
 	SnapshotID string         `json:"snapshot_id"`
@@ -345,6 +347,15 @@ func selectWindows(windows []desktop.Window, app, title string) []desktop.Window
 	return result
 }
 func observe(ctx context.Context, s *state, a ObserveArgs) response {
+	if a.CaptureMode != "" && a.CaptureMode != "window" && a.CaptureMode != "screen" {
+		return invalid("capture_mode: window or screen")
+	}
+	if a.Desktop && a.CaptureMode == "window" {
+		return invalid("desktop mode requires screen capture")
+	}
+	if !a.Desktop && !a.Screenshot && a.CaptureMode != "" {
+		return invalid("capture_mode requires screenshot=true")
+	}
 	if a.MaxDepth == 0 {
 		a.MaxDepth = 64
 	}
@@ -429,7 +440,7 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		if _, err = rand.Read(token); err != nil {
 			return response{err: err}
 		}
-		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, Created: time.Now().UTC()}
+		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, Created: time.Now().UTC(), CaptureMode: "screen"}
 		s.snapshot = snap
 		s.previous = snap
 		return response{value: snap, image: capture.Data}
@@ -478,13 +489,22 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 	snap := &Snapshot{ID: hex.EncodeToString(token), Window: &w, Elements: elements, Truncated: truncated, Region: region, Created: time.Now().UTC(), Scope: options}
 	var data []byte
 	if a.Screenshot {
-		capture, err := s.backend.Capture(ctx, region, a.MaxWidth)
+		var capture desktop.Capture
+		if a.CaptureMode == "" {
+			a.CaptureMode = "window"
+		}
+		if a.CaptureMode == "window" {
+			capture, err = s.backend.CaptureWindow(ctx, w, region, a.MaxWidth)
+		} else {
+			capture, err = s.backend.Capture(ctx, region, a.MaxWidth)
+		}
 		if err != nil {
 			return response{err: err}
 		}
 		data = capture.Data
 		snap.ImageWidth = capture.Width
 		snap.ImageHeight = capture.Height
+		snap.CaptureMode = a.CaptureMode
 	}
 	if err = ctx.Err(); err != nil {
 		return response{err: err}
@@ -548,6 +568,11 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	if err != nil {
 		return response{err: err}
 	}
+	if snap.Window != nil {
+		if err := s.backend.CheckPoint(*snap.Window, p); err != nil {
+			return response{err: err}
+		}
+	}
 	s.snapshot = nil
 	return delivered(s.backend.Input(ctx, "click", desktop.Input{Point: p, Button: a.Button, Count: a.Count}))
 }
@@ -600,6 +625,11 @@ func scroll(ctx context.Context, s *state, a ScrollArgs) response {
 	if err != nil {
 		return response{err: err}
 	}
+	if snap.Window != nil {
+		if err := s.backend.CheckPoint(*snap.Window, p); err != nil {
+			return response{err: err}
+		}
+	}
 	s.snapshot = nil
 	return delivered(s.backend.Input(ctx, "scroll", desktop.Input{Point: p, DX: a.DX, DY: a.DY}))
 }
@@ -621,6 +651,14 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 	to, err := imagePoint(snap, a.To)
 	if err != nil {
 		return response{err: err}
+	}
+	if snap.Window != nil {
+		if err := s.backend.CheckPoint(*snap.Window, p); err != nil {
+			return response{err: err}
+		}
+		if err := s.backend.CheckPoint(*snap.Window, to); err != nil {
+			return response{err: err}
+		}
 	}
 	s.snapshot = nil
 	return delivered(s.backend.Input(ctx, "drag", desktop.Input{Point: p, To: to, Duration: a.Duration}))
