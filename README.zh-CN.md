@@ -50,6 +50,8 @@ Windows 应运行在目标用户的交互式会话中。UIPI 可能阻止向管�
 
 先调用 `computer_window({"action":"list"})`，激活精确 `window_id`，再观察窗口。截图坐标相对于返回图片，左上角为 `(0, 0)`。`region` 和窗口边界使用桌面坐标，macOS 为逻辑点，Windows 为 DPI 感知像素，由服务完成转换。
 
+窗口操作也支持 `by_app`（应用名称或 `app_id`，忽略大小写精确匹配）和 `by_title`（忽略大小写的标题子串）。可组合筛选列表；activate/move 遇到多个匹配返回 `ambiguous_window`。筛选不能与 `window_id` 同用。macOS 窗口 ID 根据原生窗口身份跟踪，不依赖标题；原生窗口仍存在时，暂时枚举缺失会保留映射。原生匹配有歧义时保留 AX 身份，不根据标题猜测。
+
 ```json
 { "window_id": "<window_id>", "screenshot": true, "max_elements": 200 }
 ```

@@ -183,6 +183,24 @@ func TestImageBounds(t *testing.T) {
 	}
 }
 
+func TestWindowSelectors(t *testing.T) {
+	s, b := setup()
+	b.windows[0].App, b.windows[0].AppID, b.windows[0].Title = "Editor", "org.example.editor", "Document A"
+	b.windows = append(b.windows, desktop.Window{ID: "w2", App: "Editor", Title: "Document B"})
+	ctx := context.Background()
+	r := window(ctx, s, WindowArgs{Action: "list", ByApp: "EDITOR", ByTitle: "document"})
+	if r.err != nil || len(r.value.(map[string]any)["windows"].([]desktop.Window)) != 2 {
+		t.Fatalf("filtered list: %+v", r)
+	}
+	requireCode(t, window(ctx, s, WindowArgs{Action: "activate", ByApp: "Editor"}), "ambiguous_window")
+	requireCode(t, window(ctx, s, WindowArgs{Action: "activate", ByTitle: "missing"}), "window_not_found")
+	requireCode(t, window(ctx, s, WindowArgs{Action: "activate", WindowID: "w1", ByApp: "Editor"}), "invalid_argument")
+	r = window(ctx, s, WindowArgs{Action: "activate", ByApp: "org.example.editor"})
+	if r.err != nil || r.value.(desktop.Window).ID != "w1" {
+		t.Fatalf("app id selection: %+v", r)
+	}
+}
+
 func TestDesktopSnapshotWithoutWindows(t *testing.T) {
 	b := &fakeDesktop{displays: []desktop.Display{{ID: "main", Bounds: desktop.Rect{Width: 1000, Height: 500}}}}
 	s := &state{backend: b}

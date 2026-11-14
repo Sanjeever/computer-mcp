@@ -50,6 +50,8 @@ On Windows, run in the target user's interactive session. UIPI can prevent input
 
 Start with `computer_window({"action":"list"})`, activate an exact `window_id`, then observe it. Screenshot coordinates use the returned image, with `(0, 0)` at its top left. `region` and window bounds use desktop coordinates: logical points on macOS, DPI-aware pixels on Windows. The server converts between these spaces.
 
+Window operations also accept `by_app` (case-insensitive exact application name or `app_id`) and `by_title` (case-insensitive title substring). Combine the filters to narrow a list; activate/move reject multiple matches with `ambiguous_window`. Filters cannot combine with `window_id`. macOS window IDs track native window identity independently of titles, retaining mappings across temporary enumeration gaps while the native window exists; ambiguous native matches retain AX identity rather than guessing by title.
+
 ```json
 { "window_id": "<window_id>", "screenshot": true, "max_elements": 200 }
 ```

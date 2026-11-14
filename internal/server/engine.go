@@ -192,6 +192,8 @@ type StatusArgs struct{}
 type WindowArgs struct {
 	Action   string        `json:"action"`
 	WindowID string        `json:"window_id,omitempty"`
+	ByApp    string        `json:"by_app,omitempty"`
+	ByTitle  string        `json:"by_title,omitempty"`
 	Bounds   *desktop.Rect `json:"bounds,omitempty"`
 }
 type ObserveArgs struct {
@@ -245,21 +247,39 @@ func status(ctx context.Context, s *state, _ StatusArgs) response {
 	return response{value: v, err: err}
 }
 func window(ctx context.Context, s *state, a WindowArgs) response {
+	if a.WindowID != "" && (a.ByApp != "" || a.ByTitle != "") {
+		return invalid("window_id cannot be combined with by_app or by_title")
+	}
 	if a.Action == "list" {
 		if a.WindowID != "" || a.Bounds != nil {
 			return invalid("list does not accept window_id or bounds")
 		}
 		v, err := s.backend.Windows()
+		v = selectWindows(v, a.ByApp, a.ByTitle)
 		return response{value: map[string]any{"windows": v}, err: err}
 	}
-	if a.WindowID == "" || (a.Action != "activate" && a.Action != "move") {
-		return invalid("action must be list, activate or move; window_id is required for mutations")
+	if (a.WindowID == "" && a.ByApp == "" && a.ByTitle == "") || (a.Action != "activate" && a.Action != "move") {
+		return invalid("action must be list, activate or move; a window target is required for mutations")
 	}
 	if a.Action == "move" && (a.Bounds == nil || !a.Bounds.Valid()) {
 		return invalid("valid bounds required")
 	}
 	if a.Action == "activate" && a.Bounds != nil {
 		return invalid("activate does not accept bounds")
+	}
+	if a.WindowID == "" {
+		all, err := s.backend.Windows()
+		if err != nil {
+			return response{err: err}
+		}
+		matches := selectWindows(all, a.ByApp, a.ByTitle)
+		if len(matches) == 0 {
+			return response{err: desktop.Fail("window_not_found", "selector matched no windows")}
+		}
+		if len(matches) != 1 {
+			return response{err: desktop.Fail("ambiguous_window", fmt.Sprintf("%d windows match; use list with the same filters and select window_id", len(matches)))}
+		}
+		a.WindowID = matches[0].ID
 	}
 	w, err := findWindow(s.backend, a.WindowID, false)
 	if err != nil {
@@ -275,6 +295,19 @@ func window(ctx context.Context, s *state, a WindowArgs) response {
 	}
 	w, err = findWindow(s.backend, a.WindowID, false)
 	return response{value: w, err: err}
+}
+func selectWindows(windows []desktop.Window, app, title string) []desktop.Window {
+	result := make([]desktop.Window, 0, len(windows))
+	for _, w := range windows {
+		if app != "" && !strings.EqualFold(w.App, app) && !strings.EqualFold(w.AppID, app) {
+			continue
+		}
+		if title != "" && !strings.Contains(strings.ToLower(w.Title), strings.ToLower(title)) {
+			continue
+		}
+		result = append(result, w)
+	}
+	return result
 }
 func observe(ctx context.Context, s *state, a ObserveArgs) response {
 	if a.MaxElements == 0 {

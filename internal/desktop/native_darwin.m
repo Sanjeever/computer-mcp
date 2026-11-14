@@ -5,6 +5,7 @@
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 
 static NSMutableDictionary *windows;
+static NSMutableDictionary *windowNumbers;
 static NSMutableArray *elements;
 static unsigned long nextWindow = 1;
 
@@ -43,6 +44,32 @@ static NSDictionary *rect(CGRect r) {
     };
 }
 static AXUIElementRef windowRef(NSString *key) { return (AXUIElementRef)windows[key]; }
+static NSNumber *windowNumber(AXUIElementRef w, pid_t pid, NSArray *screenWindows) {
+    CGRect r = bounds(w);
+    NSMutableArray *matches = [NSMutableArray array];
+    for (NSDictionary *info in screenWindows) {
+        CGRect candidate;
+        if ([info[(id)kCGWindowOwnerPID] intValue] != pid ||
+            [info[(id)kCGWindowLayer] intValue] != 0 ||
+            !CGRectMakeWithDictionaryRepresentation((CFDictionaryRef)info[(id)kCGWindowBounds], &candidate))
+            continue;
+        if (fabs(r.origin.x - candidate.origin.x) <= 2 &&
+            fabs(r.origin.y - candidate.origin.y) <= 2 &&
+            fabs(r.size.width - candidate.size.width) <= 2 &&
+            fabs(r.size.height - candidate.size.height) <= 2)
+            [matches addObject:info];
+    }
+    if (matches.count > 1) {
+        NSString *title = text(attr(w, kAXTitleAttribute));
+        if (!title.length)
+            return nil;
+        NSIndexSet *different = [matches indexesOfObjectsPassingTest:^BOOL(NSDictionary *info, NSUInteger i, BOOL *stop) {
+            return ![info[(id)kCGWindowName] isEqualToString:title];
+        }];
+        [matches removeObjectsAtIndexes:different];
+    }
+    return matches.count == 1 ? matches[0][(id)kCGWindowNumber] : nil;
+}
 static NSDictionary *node(AXUIElementRef e, NSString *eid, NSString *parent) {
     NSArray *names = @[
         (id)kAXRoleAttribute, (id)kAXTitleAttribute, (id)kAXDescriptionAttribute,
@@ -79,6 +106,7 @@ static NSDictionary *node(AXUIElementRef e, NSString *eid, NSString *parent) {
 }
 static NSDictionary *listWindows(void) {
     NSMutableDictionary *fresh = [NSMutableDictionary dictionary];
+    NSMutableDictionary *numbers = [NSMutableDictionary dictionary];
     NSMutableArray *out = [NSMutableArray array];
     pid_t front = 0;
     AXUIElementRef system = AXUIElementCreateSystemWide();
@@ -87,11 +115,11 @@ static NSDictionary *listWindows(void) {
         AXUIElementGetPid((AXUIElementRef)focusedApp, &front);
     CFRelease(system);
     NSArray *screenWindows = [(NSArray *)CGWindowListCopyWindowInfo(
-        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID)
+        kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements, kCGNullWindowID)
         autorelease];
     NSMutableOrderedSet *pids = [NSMutableOrderedSet orderedSet];
     for (NSDictionary *info in screenWindows) {
-        if ([info[(id)kCGWindowLayer] intValue] == 0)
+        if ([info[(id)kCGWindowLayer] intValue] == 0 && [info[(id)kCGWindowIsOnscreen] boolValue])
             [pids addObject:info[(id)kCGWindowOwnerPID]];
     }
     for (NSNumber *process in pids) {
@@ -111,8 +139,12 @@ static NSDictionary *listWindows(void) {
                 if (r.size.width <= 0 || r.size.height <= 0)
                     continue;
                 NSString *key = nil;
+                NSNumber *number = windowNumber(w, pid, screenWindows);
                 for (NSString *existing in windows) {
-                    if (CFEqual((CFTypeRef)windows[existing], w)) {
+                    pid_t previousPID = 0;
+                    AXUIElementGetPid((AXUIElementRef)windows[existing], &previousPID);
+                    if (previousPID == pid && (CFEqual((CFTypeRef)windows[existing], w) ||
+                        (number && [number isEqual:windowNumbers[existing]]))) {
                         key = existing;
                         break;
                     }
@@ -120,10 +152,13 @@ static NSDictionary *listWindows(void) {
                 if (!key)
                     key = [NSString stringWithFormat:@"%d:%lu", pid, nextWindow++];
                 fresh[key] = value;
+                if (number)
+                    numbers[key] = number;
                 [out addObject:@{
                     @"window_id" : key,
                     @"pid" : @(pid),
                     @"app" : app.localizedName ?: @"",
+                    @"app_id" : app.bundleIdentifier ?: @"",
                     @"title" : text(attr(w, kAXTitleAttribute)),
                     @"bounds" : rect(r),
                     @"active" : @((BOOL)(front == pid && focused && CFEqual((CFTypeRef)focused, w)))
@@ -135,6 +170,30 @@ static NSDictionary *listWindows(void) {
         if (out.count >= 512)
             break;
     }
+    for (NSString *key in windows) {
+        if (fresh[key] || fresh.count >= 1024)
+            continue;
+        NSNumber *number = windowNumbers[key];
+        pid_t pid = 0;
+        AXUIElementGetPid((AXUIElementRef)windows[key], &pid);
+        BOOL live = NO;
+        for (NSDictionary *info in screenWindows) {
+            if (number && [number isEqual:info[(id)kCGWindowNumber]] &&
+                pid == [info[(id)kCGWindowOwnerPID] intValue]) {
+                live = YES;
+                break;
+            }
+        }
+        if (!number)
+            live = attr((AXUIElementRef)windows[key], kAXRoleAttribute) != nil;
+        if (live) {
+            fresh[key] = windows[key];
+            if (number)
+                numbers[key] = number;
+        }
+    }
+    [windowNumbers release];
+    windowNumbers = [numbers mutableCopy];
     [windows release];
     windows = [fresh mutableCopy];
     return @{@"windows" : out};
@@ -420,6 +479,8 @@ char *cm_call(const char *operation, const char *arguments) {
     }
 }
 void cm_close(void) {
+    [windowNumbers release];
+    windowNumbers = nil;
     [windows release];
     windows = nil;
     [elements release];

@@ -30,6 +30,7 @@ type Window struct {
 	ID     string `json:"window_id"`
 	PID    int    `json:"pid"`
 	App    string `json:"app"`
+	AppID  string `json:"app_id,omitempty"`
 	Title  string `json:"title"`
 	Bounds Rect   `json:"bounds"`
 	Active bool   `json:"active"`
