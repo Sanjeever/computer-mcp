@@ -2,7 +2,7 @@ package desktop
 
 /*
 #cgo CFLAGS: -mmacosx-version-min=14.0
-#cgo LDFLAGS: -mmacosx-version-min=14.0 -framework Cocoa -framework ApplicationServices -framework ScreenCaptureKit -framework ImageIO
+#cgo LDFLAGS: -mmacosx-version-min=14.0 -framework Cocoa -framework ApplicationServices -framework ScreenCaptureKit -framework ImageIO -framework Vision
 #include <stdlib.h>
 #include "native_darwin.h"
 */
@@ -93,6 +93,34 @@ func (b *macBackend) CaptureWindow(ctx context.Context, w Window, r Rect, width 
 }
 func (b *macBackend) CheckPoint(w Window, p Point) error {
 	return macCall("check_point", map[string]any{"window_id": w.ID, "x": p.X, "y": p.Y}, nil)
+}
+func (b *macBackend) Recognize(ctx context.Context, capture Capture, limit int) ([]RecognizedText, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	data := C.CBytes(capture.Data)
+	defer C.free(data)
+	result := C.cm_recognize((*C.uchar)(data), C.size_t(len(capture.Data)), C.int(limit))
+	if result == nil {
+		return nil, false, Fail("native_error", "empty OCR response")
+	}
+	defer C.free(unsafe.Pointer(result))
+	var response struct {
+		Regions   []RecognizedText `json:"regions"`
+		Truncated bool             `json:"truncated"`
+		Code      string           `json:"code"`
+		Detail    string           `json:"detail"`
+	}
+	if err := json.Unmarshal([]byte(C.GoString(result)), &response); err != nil {
+		return nil, false, err
+	}
+	if response.Code != "" {
+		return nil, false, Fail(response.Code, response.Detail)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return response.Regions, response.Truncated, nil
 }
 func (b *macBackend) capture(ctx context.Context, id string, r Rect, width int) (Capture, error) {
 	if err := ctx.Err(); err != nil {

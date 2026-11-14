@@ -70,6 +70,8 @@ Windows 应运行在目标用户的交互式会话中。UIPI 可能阻止向管�
 
 传入同窗口、同筛选条件的最新观察 ID `since_snapshot_id` 可获取差异。此时 `elements` 包含新增和变化节点，移除 `removed_element_ids` 后按 `element_order` 重建当前有界结果。`diff_complete:false` 表示至少一次观察发生截断，节点从结果消失不代表从应用消失。后续操作均须使用新 `snapshot_id`，未变化的元素也一样。原生身份变化表示为删除和新增。差异减少响应大小，不减少原生遍历工作。
 
+macOS 可通过 `ocr:true` 对返回截图执行本地 Vision 识别，窗口观察需同时设置 `screenshot:true`。结果包含有数量上限的 `ocr` 文本区域、置信度和图片坐标，超出预算时标记 `ocr_truncated`。无名称且无 AX 值的控件可获得 `ocr_text`，原生名称和点击校验保持独立。OCR 结果会省略与语义结果中密码控件相交的文本；其他可见敏感文本仍可能出现，尤其是纯截图或筛选观察。OCR 按需启用，会增加识别耗时，不上传图片。`computer_status.ocr` 表示支持状态，当前 npm Windows 分发版请求 OCR 会返回 `unsupported_operation`。
+
 ## 限制与行为
 
 - 默认观察 200 个元素，最多 1,000 个。树遍历预算为三秒，未完成时返回 `truncated`。名称和值均有长度上限，原生 provider 阻塞可能超出遍历预算。

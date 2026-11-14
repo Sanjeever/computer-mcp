@@ -413,6 +413,9 @@ func (b *winBackend) CheckPoint(target Window, p Point) error {
 	}
 	return nil
 }
+func (b *winBackend) Recognize(context.Context, Capture, int) ([]RecognizedText, bool, error) {
+	return nil, false, Fail("unsupported_operation", "OCR is available on macOS; this Windows distribution has no MSIX package identity")
+}
 func (b *winBackend) CaptureWindow(ctx context.Context, target Window, region Rect, width int) (Capture, error) {
 	if err := ctx.Err(); err != nil {
 		return Capture{}, err

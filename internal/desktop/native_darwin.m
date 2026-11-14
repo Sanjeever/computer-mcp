@@ -3,6 +3,7 @@
 #import <Cocoa/Cocoa.h>
 #import <ImageIO/ImageIO.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
+#import <Vision/Vision.h>
 
 static NSMutableDictionary *windows;
 static NSMutableDictionary *windowNumbers;
@@ -434,6 +435,7 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
             @"platform" : @"darwin",
             @"accessibility" : @((BOOL)AXIsProcessTrusted()),
             @"screen_capture" : @((BOOL)CGPreflightScreenCaptureAccess()),
+            @"ocr" : @YES,
             @"displays" : displays
         };
     }

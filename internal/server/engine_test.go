@@ -10,22 +10,24 @@ import (
 )
 
 type fakeDesktop struct {
-	windows     []desktop.Window
-	nodes       []desktop.Element
-	inputs      int
-	input       desktop.Input
-	calls       int
-	err         error
-	inputErr    error
-	displays    []desktop.Display
-	focus       desktop.Element
-	activate    bool
-	pointErr    error
-	captureMode string
+	windows      []desktop.Window
+	nodes        []desktop.Element
+	inputs       int
+	input        desktop.Input
+	calls        int
+	err          error
+	inputErr     error
+	displays     []desktop.Display
+	focus        desktop.Element
+	activate     bool
+	pointErr     error
+	captureMode  string
+	ocr          []desktop.RecognizedText
+	ocrSupported bool
 }
 
 func (b *fakeDesktop) Status() (desktop.Status, error) {
-	return desktop.Status{Displays: b.displays}, nil
+	return desktop.Status{Displays: b.displays, OCR: b.ocrSupported}, nil
 }
 func (b *fakeDesktop) Windows() ([]desktop.Window, error) { return b.windows, b.err }
 func (b *fakeDesktop) Observe(context.Context, desktop.Window, desktop.ObserveOptions) ([]desktop.Element, bool, error) {
@@ -63,7 +65,10 @@ func (b *fakeDesktop) CaptureWindow(context.Context, desktop.Window, desktop.Rec
 	return desktop.Capture{Data: []byte("test-image"), Width: 500, Height: 250}, b.err
 }
 func (b *fakeDesktop) CheckPoint(desktop.Window, desktop.Point) error { return b.pointErr }
-func (b *fakeDesktop) Close()                                         {}
+func (b *fakeDesktop) Recognize(context.Context, desktop.Capture, int) ([]desktop.RecognizedText, bool, error) {
+	return b.ocr, false, b.err
+}
+func (b *fakeDesktop) Close() {}
 func setup() (*state, *fakeDesktop) {
 	b := &fakeDesktop{windows: []desktop.Window{{ID: "w1", PID: 10, Active: true, Bounds: desktop.Rect{X: -100, Y: 100, Width: 1000, Height: 500}}}, nodes: []desktop.Element{{ID: "0", Role: "button", Name: "Save", Enabled: true, Bounds: desktop.Rect{X: 100, Y: 120, Width: 40, Height: 20}}}}
 	return &state{backend: b}, b

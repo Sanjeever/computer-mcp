@@ -19,6 +19,8 @@
   "since_snapshot_id": "相对筛选条件相同的最新观察返回新增、变化元素和移除 ID。按 element_order 重建当前有界结果；操作均须使用新 snapshot_id。任一观察截断时 diff_complete=false。",
   "capture_mode": "window（窗口观察默认值）捕获目标窗口；screen 捕获可见桌面区域及覆盖窗口。桌面观察固定使用 screen。窗口模式要求 screenshot=true。",
   "target_obscured": "输入位置被其他窗口覆盖，或无法确认所属窗口。请重新激活并观察目标。",
+  "ocr": "按需使用 macOS 本地 Vision 识别返回截图。窗口模式要求 screenshot=true。返回图片坐标中的文本区域和置信度，可为无名控件补充 ocr_text，不覆盖原生名称。Windows 返回 unsupported_operation。",
+  "unsupported_operation": "当前平台或分发方式不支持此操作。",
   "computer_observe": "观察当前或指定窗口，返回有数量上限的无障碍元素和新 snapshot_id。screenshot=true 附带 JPEG 截图，region 须位于窗口内。desktop=true 改为纯截图桌面快照，默认捕获首个显示器，也可指定桌面 region，不传 window_id；适合菜单、Dock、任务栏或无窗口桌面。图片坐标从零开始。新观察使旧引用失效。语义树与截图依次采集，不保证原子一致。",
   "computer_click": "点击最新快照中的 element_id 或图片坐标 point，二者必须且只能提供一个。窗口快照要求目标保持激活且位置尺寸未变；桌面快照检查显示器布局，支持系统 UI 目标。使用鼠标输入，不调用无障碍动作，不自动重试。",
   "computer_type": "在激活的 window_id 当前焦点插入 Unicode 文本。不使用剪贴板，不清除已有内容。替换前请显式发送全选或选择文本的按键。",

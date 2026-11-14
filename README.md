@@ -70,6 +70,8 @@ Observation supports `text`, `role`, `region`, `compact:true`, and `max_depth` (
 
 Pass `since_snapshot_id` from the latest observation with the same window and filters for a diff. `elements` then contains new/changed nodes; remove `removed_element_ids` and use `element_order` to reconstruct the current bounded result. `diff_complete:false` means at least one observation was truncated: removal from the result does not establish removal from the application. Use the new `snapshot_id` for every subsequent action, including unchanged elements. Native identity changes are represented as removal/addition. Diffs reduce response size, not native traversal work.
 
+On macOS, `ocr:true` runs local Vision recognition on the returned screenshot (`screenshot:true` is required for window observations). It returns bounded `ocr` text regions with confidence and image coordinates, plus `ocr_truncated` when needed. Unnamed controls with no AX value may receive `ocr_text`; native names and click validation remain separate. Text overlapping password controls present in the semantic result is omitted from OCR output. Other visible sensitive text can still appear, particularly in screenshot-only or filtered observations. OCR is opt-in, adds recognition latency, and does not upload images. `computer_status.ocr` reports support; this npm Windows distribution returns `unsupported_operation` for OCR.
+
 ## Limits and behavior
 
 - Observation defaults to 200 elements; maximum 1,000. Tree traversal has a three-second budget and reports `truncated`. Text values and names are bounded. Provider-specific delays can exceed the traversal budget.

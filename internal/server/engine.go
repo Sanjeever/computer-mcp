@@ -19,17 +19,20 @@ import (
 )
 
 type Snapshot struct {
-	ID          string                 `json:"snapshot_id"`
-	Window      *desktop.Window        `json:"window,omitempty"`
-	Displays    []desktop.Display      `json:"displays,omitempty"`
-	Elements    []desktop.Element      `json:"elements"`
-	Truncated   bool                   `json:"truncated"`
-	Region      desktop.Rect           `json:"region"`
-	ImageWidth  int                    `json:"image_width,omitempty"`
-	ImageHeight int                    `json:"image_height,omitempty"`
-	Created     time.Time              `json:"created_at"`
-	Scope       desktop.ObserveOptions `json:"-"`
-	CaptureMode string                 `json:"capture_mode,omitempty"`
+	ID           string                   `json:"snapshot_id"`
+	Window       *desktop.Window          `json:"window,omitempty"`
+	Displays     []desktop.Display        `json:"displays,omitempty"`
+	Elements     []desktop.Element        `json:"elements"`
+	Truncated    bool                     `json:"truncated"`
+	Region       desktop.Rect             `json:"region"`
+	ImageWidth   int                      `json:"image_width,omitempty"`
+	ImageHeight  int                      `json:"image_height,omitempty"`
+	Created      time.Time                `json:"created_at"`
+	Scope        desktop.ObserveOptions   `json:"-"`
+	CaptureMode  string                   `json:"capture_mode,omitempty"`
+	OCR          []desktop.RecognizedText `json:"ocr,omitempty"`
+	OCRTruncated bool                     `json:"ocr_truncated,omitempty"`
+	OCRRequested bool                     `json:"-"`
 }
 type response struct {
 	value any
@@ -224,6 +227,7 @@ type ObserveArgs struct {
 	MaxDepth        int           `json:"max_depth,omitempty"`
 	SinceSnapshotID string        `json:"since_snapshot_id,omitempty"`
 	CaptureMode     string        `json:"capture_mode,omitempty"`
+	OCR             bool          `json:"ocr,omitempty"`
 }
 type ClickArgs struct {
 	SnapshotID string         `json:"snapshot_id"`
@@ -347,6 +351,18 @@ func selectWindows(windows []desktop.Window, app, title string) []desktop.Window
 	return result
 }
 func observe(ctx context.Context, s *state, a ObserveArgs) response {
+	if a.OCR && !a.Screenshot && !a.Desktop {
+		return invalid("ocr requires screenshot=true")
+	}
+	if a.OCR {
+		capabilities, err := s.backend.Status()
+		if err != nil {
+			return response{err: err}
+		}
+		if !capabilities.OCR {
+			return response{err: desktop.Fail("unsupported_operation", "OCR is unavailable on this platform")}
+		}
+	}
 	if a.CaptureMode != "" && a.CaptureMode != "window" && a.CaptureMode != "screen" {
 		return invalid("capture_mode: window or screen")
 	}
@@ -441,6 +457,11 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 			return response{err: err}
 		}
 		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, Created: time.Now().UTC(), CaptureMode: "screen"}
+		if a.OCR {
+			if err := recognize(ctx, s.backend, snap, capture, a.MaxElements); err != nil {
+				return response{err: err}
+			}
+		}
 		s.snapshot = snap
 		s.previous = snap
 		return response{value: snap, image: capture.Data}
@@ -464,7 +485,7 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		}
 	}
 	options := desktop.ObserveOptions{Limit: a.MaxElements, RootID: a.RootID, Region: a.Region, Text: a.Text, Role: a.Role, Compact: a.Compact, MaxDepth: a.MaxDepth}
-	if a.SinceSnapshotID != "" && (s.previous.Window == nil || s.previous.Window.ID != w.ID || !sameScope(s.previous.Scope, options)) {
+	if a.SinceSnapshotID != "" && (s.previous.Window == nil || s.previous.Window.ID != w.ID || !sameScope(s.previous.Scope, options) || s.previous.OCRRequested != a.OCR) {
 		return invalid("diff requires the same window and observation filters")
 	}
 	elements, truncated, err := s.backend.Observe(ctx, w, options)
@@ -505,6 +526,11 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		snap.ImageWidth = capture.Width
 		snap.ImageHeight = capture.Height
 		snap.CaptureMode = a.CaptureMode
+		if a.OCR {
+			if err := recognize(ctx, s.backend, snap, capture, a.MaxElements); err != nil {
+				return response{err: err}
+			}
+		}
 	}
 	if err = ctx.Err(); err != nil {
 		return response{err: err}

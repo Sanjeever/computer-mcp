@@ -79,6 +79,7 @@ type Element struct {
 	Enabled  bool   `json:"enabled"`
 	Focused  bool   `json:"focused"`
 	Password bool   `json:"password,omitempty"`
+	OCRText  string `json:"ocr_text,omitempty"`
 }
 type Display struct {
 	ID     string `json:"display_id"`
@@ -88,12 +89,18 @@ type Status struct {
 	Platform      string    `json:"platform"`
 	Accessibility bool      `json:"accessibility"`
 	ScreenCapture bool      `json:"screen_capture"`
+	OCR           bool      `json:"ocr"`
 	Displays      []Display `json:"displays"`
 }
 type Capture struct {
 	Data   []byte
 	Width  int
 	Height int
+}
+type RecognizedText struct {
+	Text       string  `json:"text"`
+	Bounds     Rect    `json:"bounds"`
+	Confidence float64 `json:"confidence"`
 }
 type Input struct {
 	Point    Point
@@ -117,6 +124,7 @@ type Backend interface {
 	Capture(context.Context, Rect, int) (Capture, error)
 	CaptureWindow(context.Context, Window, Rect, int) (Capture, error)
 	CheckPoint(Window, Point) error
+	Recognize(context.Context, Capture, int) ([]RecognizedText, bool, error)
 	Close()
 }
 type Error struct {

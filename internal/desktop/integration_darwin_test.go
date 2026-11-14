@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -218,6 +219,22 @@ func TestNativeFixture(t *testing.T) {
 	}
 	if red(windowImage) || !red(screenImage) {
 		t.Fatal("window capture included cover or screen capture omitted it")
+	}
+	ocr, ocrTruncated, err := b.Recognize(ctx, windowCapture, 200)
+	if err != nil || ocrTruncated {
+		t.Fatalf("OCR failed: truncated=%v, %v", ocrTruncated, err)
+	}
+	foundCanvas := false
+	for _, region := range ocr {
+		if strings.Contains(region.Text, "Canvas text") && strings.Contains(region.Text, "识别") {
+			foundCanvas = true
+			if region.Bounds.Y < 200 || region.Bounds.Y > 300 {
+				t.Fatalf("OCR coordinates not top-left pixels: %+v", region.Bounds)
+			}
+		}
+	}
+	if !foundCanvas {
+		t.Fatalf("custom-drawn bilingual text missing from OCR: %+v", ocr)
 	}
 	crop := Rect{X: target.Bounds.X + 300, Y: target.Bounds.Y + 100, Width: 200, Height: 150}
 	cropped, err := b.CaptureWindow(ctx, target, crop, 600)

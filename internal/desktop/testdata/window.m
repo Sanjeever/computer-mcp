@@ -1,5 +1,18 @@
 #import <Cocoa/Cocoa.h>
 
+@interface FixtureCanvas : NSView
+@end
+@implementation FixtureCanvas
+- (BOOL)isAccessibilityElement { return YES; }
+- (NSString *)accessibilityRole { return NSAccessibilityImageRole; }
+- (void)drawRect:(NSRect)dirtyRect {
+    [NSColor.whiteColor setFill];
+    NSRectFill(self.bounds);
+    [@"Canvas text 识别" drawAtPoint:NSMakePoint(10, 8)
+        withAttributes:@{NSFontAttributeName: [NSFont systemFontOfSize:24], NSForegroundColorAttributeName: NSColor.blackColor}];
+}
+@end
+
 @interface Fixture : NSObject <NSApplicationDelegate>
 @property(retain) NSWindow *window;
 @property(retain) NSTextField *field;
@@ -25,6 +38,7 @@
     NSButton *cover = [NSButton buttonWithTitle:@"Fixture cover" target:self action:@selector(showCover:)];
     cover.frame = NSMakeRect(300, 100, 200, 40);
     [self.window.contentView addSubview:cover];
+    [self.window.contentView addSubview:[[FixtureCanvas alloc] initWithFrame:NSMakeRect(40, 30, 500, 45)]];
     [self.window makeKeyAndOrderFront:nil];
     [self.window makeFirstResponder:self.field];
     [NSApp activateIgnoringOtherApps:YES];
