@@ -58,5 +58,5 @@
   "from": "Drag start in screenshot image coordinates.",
   "to": "Drag end in screenshot image coordinates.",
   "duration_ms": "Drag duration, 100..3000 milliseconds; default 500.",
-  "timeout_ms": "Wait deadline, 1..10000 milliseconds; default 5000."
+  "timeout_ms": "Deadline, 1..10000 milliseconds. Wait defaults to 5000; activation and keyboard preparation default to 2000."
 }

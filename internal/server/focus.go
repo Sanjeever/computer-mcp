@@ -60,6 +60,9 @@ func prepareKeyboard(ctx context.Context, s *state, id string, auto bool, focusN
 		s.snapshot = nil
 		w, err = activateWindow(ctx, s.backend, w, timeout)
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil {
+				return desktop.Fail("activation_failed", "target="+id+"; no input sent")
+			}
 			return err
 		}
 	}
