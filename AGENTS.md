@@ -16,7 +16,7 @@ Read [README.md](README.md) for the user contract and [docs/development.md](docs
 
 - stdout is exclusively the MCP transport; diagnostic output belongs on stderr. Never log typed text, screenshots, or whole desktop snapshots by default.
 - Tool names, keys, IDs, and error codes remain language independent and use snake_case. Tool descriptions and application error messages come from `internal/i18n`; support `en` and `zh-CN`, defaulting to English. Native diagnostics may retain OS wording.
-- Observations are bounded. Report truncation. Element references belong to the latest snapshot and expire; input consumes the snapshot. Validate geometry, focus, and element identity before input.
+- Observations are bounded. Report truncation. Element references belong to the latest snapshot and expire; input consumes the snapshot. Window snapshots validate geometry, focus, and element identity before input; screenshot-only desktop snapshots validate display layout and allow system UI interaction.
 - Image coordinates refer to the returned image, including crop and resize. Convert centrally. Preserve negative desktop coordinates and mixed-DPI behavior.
 - Input is serialized and guarded by a per-user cross-process lock. Never retry an uncertain input operation. Cancellation cannot undo delivered input. Always release synthetic held keys/buttons.
 - Native providers can block beyond a Go context deadline. Keep the worker occupied until the native operation returns; do not start overlapping operations on timeout.

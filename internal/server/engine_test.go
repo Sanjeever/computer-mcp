@@ -17,9 +17,12 @@ type fakeDesktop struct {
 	calls    int
 	err      error
 	inputErr error
+	displays []desktop.Display
 }
 
-func (b *fakeDesktop) Status() (desktop.Status, error)    { return desktop.Status{}, nil }
+func (b *fakeDesktop) Status() (desktop.Status, error) {
+	return desktop.Status{Displays: b.displays}, nil
+}
 func (b *fakeDesktop) Windows() ([]desktop.Window, error) { return b.windows, b.err }
 func (b *fakeDesktop) Observe(context.Context, desktop.Window, int) ([]desktop.Element, bool, error) {
 	b.calls++
@@ -178,4 +181,59 @@ func TestImageBounds(t *testing.T) {
 			t.Fatal("out of bounds accepted")
 		}
 	}
+}
+
+func TestDesktopSnapshotWithoutWindows(t *testing.T) {
+	b := &fakeDesktop{displays: []desktop.Display{{ID: "main", Bounds: desktop.Rect{Width: 1000, Height: 500}}}}
+	s := &state{backend: b}
+	ctx := context.Background()
+	r := observe(ctx, s, ObserveArgs{Desktop: true})
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if s.snapshot.Window != nil || b.calls != 0 || len(r.image) == 0 {
+		t.Fatal("desktop mode accessed a window or omitted the image")
+	}
+	id := s.snapshot.ID
+	p := desktop.Point{X: 250, Y: 125}
+	r = click(ctx, s, ClickArgs{SnapshotID: id, Point: &p})
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if b.input.Point != (desktop.Point{X: 500, Y: 250}) {
+		t.Fatalf("desktop point: %+v", b.input.Point)
+	}
+	observe(ctx, s, ObserveArgs{Desktop: true})
+	id = s.snapshot.ID
+	b.displays[0].Bounds.X = 100
+	requireCode(t, click(ctx, s, ClickArgs{SnapshotID: id, Point: &p}), "stale_snapshot")
+}
+
+func TestCloseCancelsActiveWorker(t *testing.T) {
+	e := NewEngine(context.Background())
+	started := make(chan struct{})
+	cleaned := make(chan struct{})
+	result := make(chan response, 1)
+	go func() {
+		result <- e.call(context.Background(), func(ctx context.Context, _ *state) response {
+			close(started)
+			<-ctx.Done()
+			close(cleaned)
+			return response{err: ctx.Err()}
+		})
+	}()
+	select {
+	case <-started:
+	case r := <-result:
+		t.Fatalf("worker did not start: %v", r.err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker start timeout")
+	}
+	e.Close()
+	select {
+	case <-cleaned:
+	default:
+		t.Fatal("shutdown returned before cooperative cleanup")
+	}
+	requireCode(t, <-result, "canceled")
 }

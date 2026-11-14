@@ -58,6 +58,8 @@ Pass that response's `snapshot_id` and an `element_id` to `computer_click`, or u
 
 Observe again after input. A new observation, a wait, window mutation, or input invalidates the previous snapshot; untouched snapshots expire after 60 seconds. Geometry, focus, and element properties are checked before input. These checks cannot make desktop interaction atomic with external changes.
 
+For the Dock, taskbar, menus, or an empty desktop, use `computer_observe({"desktop":true})`. This returns a screenshot of the first display without a window or semantic elements. Set `region` to a desktop rectangle from `computer_status` to select another display or capture across displays. Coordinate input from a desktop snapshot checks the display layout instead of window focus. Window listing covers visible, non-minimized application windows.
+
 `computer_wait` accepts an exact `window_id`, optional `text`, and `timeout_ms` up to 10,000. It returns `matched: false` on timeout. Text matches accessibility names and non-password values; it does not perform OCR.
 
 ## Limits and behavior

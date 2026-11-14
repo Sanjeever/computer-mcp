@@ -20,7 +20,8 @@ import (
 
 type Snapshot struct {
 	ID          string            `json:"snapshot_id"`
-	Window      desktop.Window    `json:"window"`
+	Window      *desktop.Window   `json:"window,omitempty"`
+	Displays    []desktop.Display `json:"displays,omitempty"`
 	Elements    []desktop.Element `json:"elements"`
 	Truncated   bool              `json:"truncated"`
 	Region      desktop.Rect      `json:"region"`
@@ -42,6 +43,7 @@ type Engine struct {
 	jobs chan job
 	done chan struct{}
 	stop context.CancelFunc
+	ctx  context.Context
 }
 type state struct {
 	backend  desktop.Backend
@@ -50,7 +52,7 @@ type state struct {
 
 func NewEngine(parent context.Context) *Engine {
 	ctx, cancel := context.WithCancel(parent)
-	e := &Engine{make(chan job, 16), make(chan struct{}), cancel}
+	e := &Engine{jobs: make(chan job, 16), done: make(chan struct{}), stop: cancel, ctx: ctx}
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
@@ -109,10 +111,18 @@ func NewEngine(parent context.Context) *Engine {
 	}()
 	return e
 }
-func (e *Engine) Close() { e.stop() }
+func (e *Engine) Close() {
+	e.stop()
+	select {
+	case <-e.done:
+	case <-time.After(2 * time.Second):
+	}
+}
 func (e *Engine) call(ctx context.Context, f func(context.Context, *state) response) response {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	stop := context.AfterFunc(e.ctx, cancel)
+	defer stop()
 	j := job{ctx, f, make(chan response, 1)}
 	select {
 	case <-e.done:
@@ -152,6 +162,16 @@ func (s *state) current(id string) (*Snapshot, error) {
 	if snap == nil || snap.ID != id || time.Since(snap.Created) > 60*time.Second {
 		return nil, desktop.Fail("stale_snapshot", "")
 	}
+	if snap.Window == nil {
+		status, err := s.backend.Status()
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Equal(status.Displays, snap.Displays) {
+			return nil, desktop.Fail("stale_snapshot", "display layout changed")
+		}
+		return snap, nil
+	}
 	w, err := findWindow(s.backend, snap.Window.ID, true)
 	if err != nil {
 		return nil, err
@@ -175,6 +195,7 @@ type WindowArgs struct {
 	Bounds   *desktop.Rect `json:"bounds,omitempty"`
 }
 type ObserveArgs struct {
+	Desktop     bool          `json:"desktop,omitempty"`
 	WindowID    string        `json:"window_id,omitempty"`
 	Screenshot  bool          `json:"screenshot,omitempty"`
 	MaxElements int           `json:"max_elements,omitempty"`
@@ -265,6 +286,51 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 	if a.MaxElements < 1 || a.MaxElements > 1000 || a.MaxWidth < 320 || a.MaxWidth > 2560 {
 		return invalid("max_elements: 1..1000; max_width: 320..2560")
 	}
+	if a.Desktop {
+		if a.WindowID != "" {
+			return invalid("desktop mode does not accept window_id")
+		}
+		s.snapshot = nil
+		status, err := s.backend.Status()
+		if err != nil {
+			return response{err: err}
+		}
+		if len(status.Displays) == 0 {
+			return invalid("no active displays")
+		}
+		region := status.Displays[0].Bounds
+		if a.Region != nil {
+			region = *a.Region
+		}
+		if !region.Valid() {
+			return invalid("invalid capture region")
+		}
+		intersects := false
+		for _, d := range status.Displays {
+			r := d.Bounds
+			if region.X < r.X+r.Width && region.X+region.Width > r.X && region.Y < r.Y+r.Height && region.Y+region.Height > r.Y {
+				intersects = true
+				break
+			}
+		}
+		if !intersects {
+			return invalid("region is outside active displays")
+		}
+		capture, err := s.backend.Capture(ctx, region, a.MaxWidth)
+		if err != nil {
+			return response{err: err}
+		}
+		if err = ctx.Err(); err != nil {
+			return response{err: err}
+		}
+		token := make([]byte, 16)
+		if _, err = rand.Read(token); err != nil {
+			return response{err: err}
+		}
+		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, Created: time.Now().UTC()}
+		s.snapshot = snap
+		return response{value: snap, image: capture.Data}
+	}
 	if !a.Screenshot && (a.Region != nil || a.MaxWidth != 1440) {
 		return invalid("region and max_width require screenshot=true")
 	}
@@ -302,7 +368,7 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 	if _, err = rand.Read(token); err != nil {
 		return response{err: err}
 	}
-	snap := &Snapshot{ID: hex.EncodeToString(token), Window: w, Elements: elements, Truncated: truncated, Region: region, Created: time.Now().UTC()}
+	snap := &Snapshot{ID: hex.EncodeToString(token), Window: &w, Elements: elements, Truncated: truncated, Region: region, Created: time.Now().UTC()}
 	var data []byte
 	if a.Screenshot {
 		capture, err := s.backend.Capture(ctx, region, a.MaxWidth)
