@@ -756,7 +756,7 @@ unsigned char *cm_capture(const char *window_id, double x, double y, double widt
                     }];
                 [filter release];
                 [config release];
-                // Keep the serialized worker occupied until ScreenCaptureKit finishes.
+                // A caller timeout must not permit overlapping native capture operations.
                 dispatch_semaphore_wait(done->semaphore, DISPATCH_TIME_FOREVER);
                 if (!done->image) {
                     *error = strdup(done->error.localizedDescription.UTF8String ?: "window capture failed");

@@ -2,23 +2,18 @@
 
 [简体中文](development.zh-CN.md)
 
-Use the Go version in `go.mod`, Node.js 22+, and the pnpm version in `package.json`. macOS builds require Xcode Command Line Tools and `MACOSX_DEPLOYMENT_TARGET=14.0`; Windows builds use Go's Windows toolchain and do not require cgo. No compiler is required on end-user machines.
+This guide covers local builds, verification, architecture decisions, and release operations. Supported systems and desktop permissions are defined in the [README](../README.md).
+
+Use the Go version in [go.mod](../go.mod), and the Node.js and pnpm versions declared by `engines` and `packageManager` in [package.json](../package.json). macOS builds require Xcode Command Line Tools; Windows builds use Go's Windows toolchain without cgo. Build native binaries on the corresponding OS and architecture.
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm lint
-pnpm fmt:check
-pnpm test
-go test ./...
-go vet ./...
 pnpm build
 pnpm build:native
 pnpm smoke
-pnpm pack:platform
 ```
 
-On macOS, set these before Go test/vet commands; `build:native` sets them automatically:
+The complete check sequence, including typecheck, lint, formatting, Vitest, Go tests/vet, and package checks, is maintained in [CI](../.github/workflows/ci.yml). On macOS, set these before running Go test/vet commands directly; `build:native` sets them automatically:
 
 ```sh
 export MACOSX_DEPLOYMENT_TARGET=14.0
@@ -28,38 +23,53 @@ export CGO_LDFLAGS="-mmacosx-version-min=14.0"
 
 The Go toolchain may download the version required by `go.mod` when the local version is older. Before the first platform packages are published, pnpm may report missing optional platform dependencies; local builds and smoke tests use `build/` directly.
 
-Go tests cover snapshot identity, stale target rejection, image coordinate mapping, input validation, password redaction, MCP schema rejection, and translation parity. TypeScript tests cover platform selection and missing-package errors. `smoke` starts the actual stdio process, negotiates MCP, lists tools, calls the read-only status tool, and verifies EOF shutdown. It does not send desktop input.
+To check installed packages locally after building:
 
-The backend is serialized on one locked OS thread. UIA uses COM MTA, cached property requests, provider timeouts, and bounded traversal. macOS uses AX queries with messaging timeouts and ScreenCaptureKit. Raw native references stay inside the backend. A snapshot carries coordinate metadata; observation and screenshots are sequential, so they are not an atomic view of the desktop.
+```sh
+pnpm pack:platform
+npm pack --pack-destination artifacts --ignore-scripts
+pnpm pack:check
+```
 
-`internal/i18n/en.json` and `zh-CN.json` must have matching keys. English and Chinese READMEs describe the same contract. Keep OS error details intact. Use English Conventional Commits.
+`pack:check` needs both tarballs. It installs them offline into an isolated temporary directory and runs the launcher through the stdio smoke check. `smoke` negotiates MCP, lists tools, calls the read-only status tool, and verifies EOF shutdown; it sends no desktop input.
+
+## Architecture decisions
+
+The backend uses one locked OS thread to preserve UIA COM lifetimes and serialize desktop operations. UIA and AX use bounded traversal and provider timeouts, but a native call can outlive a request deadline. The worker and cross-process lock remain occupied until that call returns so another operation cannot overlap it. The request and queue limits are defined in the [README](../README.md#limits-and-behavior).
+
+Native references stay inside `internal/desktop`. Window and element IDs follow native identity so title edits and traversal order changes do not retarget input. On macOS, window mappings survive temporary enumeration gaps; ambiguous matches retain AX identity instead of guessing by title.
+
+Window capture and screen capture are explicit choices because an unobscured window image and the visible input target can differ. Hit testing still rejects covered window targets. OCR from screen capture stays separate from native controls because the text may belong to an overlapping window. See the [tool contract](../README.md#tools) for capture modes, coordinates, focus, and snapshot recovery.
 
 ## CI
 
-`.github/workflows/ci.yml` checks Go and TypeScript, builds on macOS arm64 and Windows x64, runs stdio smoke checks, packs the native npm package, and installs both native and launcher tarballs into an isolated temporary directory for another smoke check. It uploads those exact tarballs. Hosted runners do not verify macOS permissions, signed upgrades, or arbitrary application interaction.
+[CI](../.github/workflows/ci.yml) runs checks and package smoke tests on both supported platforms, then uploads the verified tarballs. Hosted runners do not verify macOS permissions, signed upgrades, or arbitrary application interaction.
+
+- [Server tests](../internal/server/) cover snapshot invalidation, coordinate mapping, focus and input validation, cancellation, password redaction, OCR, diffs, and MCP contracts using a fake backend where desktop interaction is involved. [Catalog tests](../internal/i18n/i18n_test.go) check language-key parity; [launcher tests](../src/launcher.test.ts) check platform selection and missing-package errors.
+- [Desktop fixture tests](../internal/desktop/integration_darwin_test.go) cover native macOS input, window identity, text extraction, capture, and OCR. [Server fixture tests](../internal/server/coordinates_darwin_test.go) verify clicks against actual JPEG targets through resize/crop and window movement, floating panels, continuous drags, cancellation cleanup, and real stdio capture.
 
 Native UI acceptance should use a dedicated test window in an interactive session. Verify Unicode text, click, keyboard selection, scrolling, dragging, screenshots, focus rejection, and stale references. Repeat at multiple scaling factors and with secondary monitors before claiming those configurations are validated. Do not automate input into personal applications during tests.
 
-On macOS, run `COMPUTER_MCP_NATIVE_TEST=1 go test -p 1 -v ./internal/desktop ./internal/server` after setting the cgo flags above. Run native packages serially so their fixture windows do not compete for focus. These opt-in tests create dedicated Cocoa windows and check focus, English/Chinese/emoji input, multiline rich-text editing (including leading newlines, tabs, selection replacement and insertion after shortcuts), clicks, subtree identity, text extraction from a 300-row table, stable window IDs after title changes and hide/show, modal blocking, window/screen capture under an opaque cover, crop dimensions, hit-test rejection, and bilingual Vision OCR of a custom-drawn control. The server test locates a target in the actual JPEG and verifies image-coordinate clicks at original size, after resize/crop, and after moving/resizing the window. Tests skip with a reason when Accessibility or Screen Recording permission is absent. The native interaction fixture currently covers macOS; Windows CI runs the native status and stdio checks. Windows static checks do not establish PrintWindow or UIA runtime compatibility.
+On macOS, set the cgo flags above, then run:
 
-The server fixture also covers non-key floating panels, continuous multi-point strokes, button release after cancellation, and screenshot round trips through real stdio subprocesses. Unit tests cover legacy two-point drags, path budgets, cropped/negative coordinate transforms, intermediate-point obstruction, and movement failure without retries.
+```sh
+COMPUTER_MCP_NATIVE_TEST=1 go test -p 1 -v ./internal/desktop ./internal/server
+```
+
+Run native packages serially so their fixture windows do not compete for focus. Tests skip with a reason when Accessibility or Screen Recording permission is absent. The interaction fixture currently covers macOS; Windows CI runs native status and stdio checks, which do not establish PrintWindow rendering or UIA interaction compatibility.
 
 ## Release
 
-The root `package.json` version is authoritative. Update it and both `optionalDependencies` versions together, then run `pnpm install --lockfile-only`. Commit the lockfile and relevant bilingual documentation.
+The root [package.json](../package.json) version is authoritative; native builds embed it and platform packaging checks it. Update it and both `optionalDependencies` versions together, then run `pnpm install --lockfile-only`. Commit the lockfile and relevant bilingual documentation.
 
-Release supports two entry points:
+[Release](../.github/workflows/release.yml) supports two entry points:
 
 - Push a `vX.Y.Z` tag to build, verify, publish the three npm packages, and create a GitHub Release.
 - Run the Release workflow manually with `publish=false` to build and upload artifacts without publishing. With `publish=true`, select a matching version tag.
 
 The tag must match `package.json`. The workflow publishes native packages before the launcher and uses the CI tarballs without rebuilding them. npm versions are immutable: inspect partial publication before rerunning a failed publishing job.
 
-Before the first public release, establish ownership of these packages and configure npm trusted publishers for `Sanjeever/computer-mcp`, workflow `release.yml`, GitHub environment `npm`:
-
-- `@sanjeever/computer-mcp`
-- `@sanjeever/computer-mcp-darwin-arm64`
-- `@sanjeever/computer-mcp-win32-x64`
+Before the first public release, establish ownership of the launcher package (`name` in [package.json](../package.json)) and both packages listed in its `optionalDependencies`. Configure npm trusted publishers for the repository named there, workflow `release.yml`, and GitHub environment `npm`.
 
 Create the GitHub `npm` environment and set its protection rules. Initial package creation and npm account setup may require an authenticated bootstrap publication; that is an account operation performed separately from this workflow. Subsequent releases use OIDC with `id-token: write` and npm provenance. No `NPM_TOKEN` is embedded or required by the workflow.
 
