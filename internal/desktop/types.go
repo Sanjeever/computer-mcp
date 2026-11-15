@@ -60,14 +60,15 @@ func (o ObserveOptions) Includes(e Element) bool {
 }
 
 type Window struct {
-	ID        string `json:"window_id"`
-	PID       int    `json:"pid"`
-	App       string `json:"app"`
-	AppID     string `json:"app_id,omitempty"`
-	Title     string `json:"title"`
-	Bounds    Rect   `json:"bounds"`
-	Active    bool   `json:"active"`
-	BlockedBy string `json:"blocked_by,omitempty"`
+	ID          string `json:"window_id"`
+	PID         int    `json:"pid"`
+	App         string `json:"app"`
+	AppID       string `json:"app_id,omitempty"`
+	Title       string `json:"title"`
+	Bounds      Rect   `json:"bounds"`
+	Active      bool   `json:"active"`
+	MouseActive bool   `json:"mouse_active,omitempty"`
+	BlockedBy   string `json:"blocked_by,omitempty"`
 }
 type Element struct {
 	ID       string `json:"element_id"`

@@ -69,7 +69,7 @@ static NSNumber *windowNumber(AXUIElementRef w, pid_t pid, NSArray *screenWindow
     for (NSDictionary *info in screenWindows) {
         CGRect candidate;
         if ([info[(id)kCGWindowOwnerPID] intValue] != pid ||
-            [info[(id)kCGWindowLayer] intValue] != 0 ||
+            ![info[(id)kCGWindowIsOnscreen] boolValue] ||
             !CGRectMakeWithDictionaryRepresentation((CFDictionaryRef)info[(id)kCGWindowBounds], &candidate))
             continue;
         NSString *candidateTitle = info[(id)kCGWindowName];
@@ -172,13 +172,17 @@ static NSDictionary *listWindows(void) {
         autorelease];
     NSMutableOrderedSet *pids = [NSMutableOrderedSet orderedSet];
     for (NSDictionary *info in screenWindows) {
-        if ([info[(id)kCGWindowLayer] intValue] == 0 && [info[(id)kCGWindowIsOnscreen] boolValue])
+        NSInteger layer = [info[(id)kCGWindowLayer] integerValue];
+        if (layer >= NSNormalWindowLevel && layer < NSMainMenuWindowLevel &&
+            [info[(id)kCGWindowIsOnscreen] boolValue])
             [pids addObject:info[(id)kCGWindowOwnerPID]];
     }
     for (NSNumber *process in pids) {
         pid_t pid = process.intValue;
         NSRunningApplication *app =
             [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+        if (!app || app.activationPolicy == NSApplicationActivationPolicyProhibited)
+            continue;
         AXUIElementRef root = AXUIElementCreateApplication(pid);
         AXUIElementSetMessagingTimeout(root, 0.15);
         id list = attr(root, kAXWindowsAttribute);
@@ -212,6 +216,7 @@ static NSDictionary *listWindows(void) {
                 if (!number && windowNumbers[key]) {
                     for (NSDictionary *info in screenWindows) {
                         if ([windowNumbers[key] isEqual:info[(id)kCGWindowNumber]] &&
+                            [info[(id)kCGWindowIsOnscreen] boolValue] &&
                             pid == [info[(id)kCGWindowOwnerPID] intValue]) {
                             number = windowNumbers[key];
                             break;
@@ -221,7 +226,19 @@ static NSDictionary *listWindows(void) {
                 fresh[key] = value;
                 if (number)
                     numbers[key] = number;
+                if (!number && !ambiguous) {
+                    if (windowNumbers[key])
+                        numbers[key] = windowNumbers[key];
+                    continue;
+                }
                 NSString *blocker = blockedBy(w);
+                BOOL keyWindow = focused && CFEqual((CFTypeRef)focused, w);
+                BOOL panel = NO;
+                if (front == pid && !keyWindow) {
+                    NSString *subrole = text(attr(w, kAXSubroleAttribute));
+                    panel = [subrole isEqualToString:(id)kAXFloatingWindowSubrole] ||
+                            [subrole isEqualToString:(id)kAXSystemFloatingWindowSubrole];
+                }
                 if (!blocker.length && focused && !CFEqual((CFTypeRef)focused, w) &&
                     [attr((AXUIElementRef)focused, kAXModalAttribute) boolValue]) {
                     blocker = [@"modal window: " stringByAppendingString:text(attr((AXUIElementRef)focused, kAXTitleAttribute))];
@@ -234,7 +251,8 @@ static NSDictionary *listWindows(void) {
                     @"title" : text(attr(w, kAXTitleAttribute)),
                     @"bounds" : rect(r),
                     @"blocked_by" : blocker,
-                    @"active" : @((BOOL)(front == pid && focused && CFEqual((CFTypeRef)focused, w)))
+                    @"active" : @((BOOL)(front == pid && keyWindow)),
+                    @"mouse_active" : @((BOOL)(front == pid && (keyWindow || panel)))
                 }];
                 if (out.count >= 512)
                     break;

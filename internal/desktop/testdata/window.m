@@ -29,6 +29,7 @@
 @property(retain) NSTextField *field;
 @property(retain) NSWindow *cover;
 @property(retain) NSWindow *editorWindow;
+@property(retain) NSPanel *palette;
 @end
 @implementation Fixture
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
@@ -78,6 +79,9 @@
     NSButton *editor = [NSButton buttonWithTitle:@"Editor" target:self action:@selector(showEditor:)];
     editor.frame = NSMakeRect(510, 55, 80, 35);
     [self.window.contentView addSubview:editor];
+    NSButton *palette = [NSButton buttonWithTitle:@"Palette" target:self action:@selector(showPalette:)];
+    palette.frame = NSMakeRect(300, 150, 150, 30);
+    [self.window.contentView addSubview:palette];
     [self.window.contentView addSubview:scroll];
     [self.window makeKeyAndOrderFront:nil];
     [self.window makeFirstResponder:self.field];
@@ -87,6 +91,19 @@
     self.field.stringValue = @"submitted";
     self.window.title = @"Computer MCP Native Fixture Updated";
 }
+- (void)showPalette:(id)sender {
+    self.palette = [[NSPanel alloc] initWithContentRect:NSMakeRect(800, 500, 180, 100)
+        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskUtilityWindow | NSWindowStyleMaskNonactivatingPanel
+        backing:NSBackingStoreBuffered defer:NO];
+    self.palette.title = @"Computer MCP Fixture Palette";
+    self.palette.floatingPanel = YES;
+    self.palette.becomesKeyOnlyIfNeeded = YES;
+    NSButton *button = [NSButton buttonWithTitle:@"Palette action" target:self action:@selector(paletteClick:)];
+    button.frame = NSMakeRect(20, 25, 140, 40);
+    [self.palette.contentView addSubview:button];
+    [self.palette orderFront:nil];
+}
+- (void)paletteClick:(id)sender { self.field.stringValue = @"palette clicked"; }
 - (void)showEditor:(id)sender {
     self.editorWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(250, 200, 600, 500)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable

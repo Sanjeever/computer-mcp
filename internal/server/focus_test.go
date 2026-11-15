@@ -71,3 +71,31 @@ func TestFocusTimeoutReportsActualControl(t *testing.T) {
 		t.Fatal("input sent to wrong focused control")
 	}
 }
+
+func TestNonKeyPanelAcceptsMouseButRejectsKeyboard(t *testing.T) {
+	s, b := setup()
+	b.windows[0].Active = false
+	b.windows[0].MouseActive = true
+	ctx := context.Background()
+	if r := window(ctx, s, WindowArgs{Action: "activate", WindowID: "w1"}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	requireCode(t, key(ctx, s, KeyArgs{WindowID: "w1", Keys: []string{"space"}}), "not_active")
+	if r := observe(ctx, s, ObserveArgs{WindowID: "w1", Screenshot: true}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	if r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, Point: &desktop.Point{X: 10, Y: 10}}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	if b.inputs != 1 {
+		t.Fatalf("input count=%d", b.inputs)
+	}
+	b.windows[0].MouseActive = false
+	if r := observe(ctx, s, ObserveArgs{WindowID: "w1", Screenshot: true}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	requireCode(t, click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, Point: &desktop.Point{X: 10, Y: 10}}), "not_active")
+	if b.inputs != 1 {
+		t.Fatal("input sent to inactive application")
+	}
+}

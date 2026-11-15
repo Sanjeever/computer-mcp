@@ -30,6 +30,9 @@ func activateWindow(ctx context.Context, b desktop.Backend, w desktop.Window, ti
 			return current, ctx.Err()
 		}
 		var de *desktop.Error
+		if errors.As(err, &de) && de.Code == "not_active" && current.MouseActive {
+			return current, ctx.Err()
+		}
 		if !errors.As(err, &de) || (de.Code != "not_active" && de.Code != "window_not_found") {
 			return current, err
 		}

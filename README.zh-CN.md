@@ -52,6 +52,8 @@ Windows 应运行在目标用户的交互式会话中。UIPI 可能阻止向管�
 
 窗口操作也支持 `by_app`（应用名称或 `app_id`，忽略大小写精确匹配）和 `by_title`（忽略大小写的标题子串）。可组合筛选列表；activate/move 遇到多个匹配返回 `ambiguous_window`。筛选不能与 `window_id` 同用。macOS 窗口 ID 根据原生窗口身份跟踪，不依赖标题；原生窗口仍存在时，暂时枚举缺失会保留映射。原生匹配有歧义时保留 AX 身份，不根据标题猜测。
 
+macOS 浮动工具面板作为独立窗口列出。应按面板自身的 `window_id` 观察和操作，不能沿用文档窗口的截图坐标。应用处于前台时，非键盘焦点面板可返回 `mouse_active:true`、`active:false`。激活操作可确认这一可接收鼠标的状态，无须让面板取得键盘焦点；键盘输入仍要求 `active:true`。窗口鼠标操作继续检查几何位置和落点实际所属窗口。
+
 ```json
 { "window_id": "<window_id>", "screenshot": true, "max_elements": 200 }
 ```
@@ -64,7 +66,7 @@ Windows 应运行在目标用户的交互式会话中。UIPI 可能阻止向管�
 
 `computer_wait` 接受精确 `window_id`、可选 `text` 和不超过 10,000 的 `timeout_ms`。超时返回 `matched: false`。文本匹配无障碍名称和非密码值，不执行 OCR。
 
-激活会等待窗口焦点确认，默认 2,000 毫秒，可通过 `timeout_ms` 设置，最多 10,000。失败返回 `activation_failed`，已识别的模态阻塞返回 `window_blocked`，不再将 `active:false` 作为成功结果。`computer_wait` 还支持 `active:true`、`focused:true` 和精确 `focus_name`，可与 `text` 组合。键盘工具支持 `auto_activate:true` 和 `focus_name`，在发送前准备目标，共享默认 2,000 毫秒的准备预算。输入发送一次，成功表示已投递，不表示应用处理完成。基于快照的鼠标输入仍要求显式激活后重新观察。
+激活会等待窗口焦点或非键盘焦点面板的鼠标操作条件确认，默认 2,000 毫秒，可通过 `timeout_ms` 设置，最多 10,000。失败返回 `activation_failed`，已识别的模态阻塞返回 `window_blocked`。`computer_wait` 还支持 `active:true`、`focused:true` 和精确 `focus_name`，可与 `text` 组合。键盘工具支持 `auto_activate:true` 和 `focus_name`，在发送前准备目标，共享默认 2,000 毫秒的准备预算。输入发送一次，成功表示已投递，不表示应用处理完成。基于快照的鼠标输入仍要求显式激活后重新观察。
 
 激活窗口不会选择文本框。打开查找栏或对话框后，应检查观察结果中 `focused` 的元素。`focus_name` 是该控件的无障碍 `name`，不是窗口标题；控件无名称时省略。该参数等待焦点，不会转移焦点。键盘工具返回 `focus_timeout` 时，会附带最近观测的控件名称、角色和焦点状态，且未发送输入。`computer_wait` 的条件等待超时则返回 `matched:false`。
 

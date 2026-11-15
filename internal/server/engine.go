@@ -198,7 +198,8 @@ func (s *state) current(id string) (*Snapshot, error) {
 		return snap, nil
 	}
 	w, err := findWindow(s.backend, snap.Window.ID, true)
-	if err != nil {
+	var de *desktop.Error
+	if err != nil && !(errors.As(err, &de) && de.Code == "not_active" && w.MouseActive) {
 		return nil, err
 	}
 	if w.PID != snap.Window.PID || w.Bounds != snap.Window.Bounds {

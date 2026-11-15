@@ -52,6 +52,8 @@ Start with `computer_window({"action":"list"})`, activate an exact `window_id`, 
 
 Window operations also accept `by_app` (case-insensitive exact application name or `app_id`) and `by_title` (case-insensitive title substring). Combine the filters to narrow a list; activate/move reject multiple matches with `ambiguous_window`. Filters cannot combine with `window_id`. macOS window IDs track native window identity independently of titles, retaining mappings across temporary enumeration gaps while the native window exists; ambiguous native matches retain AX identity rather than guessing by title.
 
+macOS floating tool panels are listed as separate windows. Observe and interact with their own `window_id` and image, rather than coordinates from the document window. A non-key panel may report `mouse_active:true` while `active:false` when its application is frontmost. Activation can confirm this mouse-ready state without giving the panel keyboard focus; keyboard input still requires `active:true`. Window mouse input continues to check geometry and the actual owner at the target point.
+
 ```json
 { "window_id": "<window_id>", "screenshot": true, "max_elements": 200 }
 ```
@@ -64,7 +66,7 @@ For the Dock, taskbar, menus, or an empty desktop, use `computer_observe({"deskt
 
 `computer_wait` accepts an exact `window_id`, optional `text`, and `timeout_ms` up to 10,000. It returns `matched: false` on timeout. Text matches accessibility names and non-password values; it does not perform OCR.
 
-Activation waits for confirmed window focus (default 2,000 ms, configurable with `timeout_ms` up to 10,000). It reports `activation_failed` or an identified `window_blocked` instead of succeeding with `active:false`. `computer_wait` also accepts `active:true`, `focused:true`, and an exact `focus_name`; conditions combine with `text`. Keyboard tools accept `auto_activate:true` and `focus_name` to prepare the target before sending input, sharing a default 2,000 ms preparation budget. Input is sent once; success confirms delivery, not application processing. Snapshot-based mouse input still requires explicit activation followed by a fresh observation.
+Activation waits for confirmed window focus or a non-key panel's mouse-ready state (default 2,000 ms, configurable with `timeout_ms` up to 10,000). It reports `activation_failed` or an identified `window_blocked` when the target cannot be activated. `computer_wait` also accepts `active:true`, `focused:true`, and an exact `focus_name`; conditions combine with `text`. Keyboard tools accept `auto_activate:true` and `focus_name` to prepare the target before sending input, sharing a default 2,000 ms preparation budget. Input is sent once; success confirms delivery, not application processing. Snapshot-based mouse input still requires explicit activation followed by a fresh observation.
 
 Window activation does not select a text field. Check the observed `focused` element, especially after opening search or a dialog. `focus_name` is that control's accessibility `name`, not the window title; omit it for unnamed controls. It waits for focus rather than moving it. A keyboard `focus_timeout` includes the last observed control name, role and focus state, with no input sent. `computer_wait` instead returns `matched:false` when its conditions time out.
 

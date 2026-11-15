@@ -69,6 +69,9 @@ func TestNativeImageCoordinates(t *testing.T) {
 	s := &state{backend: b}
 	for _, mode := range []string{"original", "scaled", "cropped", "moved"} {
 		t.Run(mode, func(t *testing.T) {
+			if r := window(ctx, s, WindowArgs{Action: "activate", WindowID: target.ID}); r.err != nil {
+				t.Fatal(r.err)
+			}
 			if mode == "moved" {
 				bounds := target.Bounds
 				bounds.X += 70
@@ -141,6 +144,71 @@ func TestNativeImageCoordinates(t *testing.T) {
 		if t.Failed() {
 			return
 		}
+	}
+	t.Run("floating panel", func(t *testing.T) {
+		if r := observe(ctx, s, ObserveArgs{WindowID: target.ID}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		var button string
+		for _, element := range s.snapshot.Elements {
+			if element.Name == "Palette" {
+				button = element.ID
+			}
+		}
+		if button == "" {
+			t.Fatal("palette opener missing")
+		}
+		if r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, ElementID: button}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		var palette desktop.Window
+		for range 20 {
+			windows, err := b.Windows()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range windows {
+				if w.PID == app.Process.Pid && w.Title == "Computer MCP Fixture Palette" {
+					palette = w
+				}
+			}
+			if palette.ID != "" {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if palette.ID == "" {
+			t.Fatal("floating palette missing from window list")
+		}
+		if palette.Active || !palette.MouseActive {
+			t.Fatalf("non-key panel state: %+v", palette)
+		}
+		requireCode(t, key(ctx, s, KeyArgs{WindowID: palette.ID, Keys: []string{"space"}}), "not_active")
+		if r := observe(ctx, s, ObserveArgs{WindowID: palette.ID, Screenshot: true}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		button = ""
+		for _, element := range s.snapshot.Elements {
+			if element.Name == "Palette action" {
+				button = element.ID
+			}
+		}
+		if button == "" {
+			t.Fatal("palette action missing")
+		}
+		if r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, ElementID: button}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		r := wait(ctx, s, WaitArgs{WindowID: target.ID, Text: "palette clicked", Timeout: 2000})
+		if r.err != nil || r.value.(map[string]any)["matched"] != true {
+			t.Fatalf("palette click: %+v", r)
+		}
+		if r := window(ctx, s, WindowArgs{Action: "activate", WindowID: palette.ID}); r.err != nil {
+			t.Fatal(r.err)
+		}
+	})
+	if t.Failed() {
+		return
 	}
 	t.Run("stdio capture", func(t *testing.T) {
 		binary := filepath.Join(t.TempDir(), "computer-mcp")
