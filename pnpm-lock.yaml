@@ -1014,6 +1014,10 @@ packages:
     engines: {node: '>=20.11'}
     hasBin: true
 
+ignoredOptionalDependencies:
+  - '@sanjeever/computer-mcp-darwin-arm64'
+  - '@sanjeever/computer-mcp-win32-x64'
+
 snapshots:
 
   '@emnapi/core@2.0.0-beta.2':

@@ -2,3 +2,6 @@ packages:
   - .
 allowBuilds:
   esbuild: true
+ignoredOptionalDependencies:
+  - "@sanjeever/computer-mcp-darwin-arm64"
+  - "@sanjeever/computer-mcp-win32-x64"

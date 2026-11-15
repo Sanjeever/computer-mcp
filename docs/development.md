@@ -21,7 +21,7 @@ export CGO_CFLAGS="-mmacosx-version-min=14.0"
 export CGO_LDFLAGS="-mmacosx-version-min=14.0"
 ```
 
-The Go toolchain may download the version required by `go.mod` when the local version is older. Before the first platform packages are published, pnpm may report missing optional platform dependencies; local builds and smoke tests use `build/` directly.
+The Go toolchain may download the version required by `go.mod` when the local version is older. The [pnpm workspace configuration](../pnpm-workspace.yaml) excludes this project's optional platform packages from source dependency installation so frozen installs work before those packages are published. Local builds and smoke tests use `build/` directly; package checks install the newly built tarballs.
 
 To check installed packages locally after building:
 

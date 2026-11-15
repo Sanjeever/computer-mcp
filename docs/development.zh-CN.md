@@ -21,7 +21,7 @@ export CGO_CFLAGS="-mmacosx-version-min=14.0"
 export CGO_LDFLAGS="-mmacosx-version-min=14.0"
 ```
 
-本机 Go 较旧时，工具链可能下载 `go.mod` 要求的版本。首次发布平台包前，pnpm 可能报告缺少可选平台依赖，本地构建和冒烟验证直接使用 `build/` 产物。
+本机 Go 较旧时，工具链可能下载 `go.mod` 要求的版本。[pnpm 工作区配置](../pnpm-workspace.yaml) 在源码依赖安装时排除本项目的可选平台包，保证这些包发布前也能完成冻结安装。本地构建和冒烟验证直接使用 `build/` 产物，安装包检查会安装本次构建的 tarball。
 
 构建后，在本地验证实际安装包：
 
