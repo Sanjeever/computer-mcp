@@ -85,6 +85,7 @@ OCR augments native controls only in window capture mode. Screen captures return
 - A per-user file lock coordinates instances of this server. It does not prevent a human or other software from moving focus. `busy` means another instance owns the desktop operation.
 - Clicks are physical mouse events. Keyboard chords use virtual keys; macOS letter/digit shortcuts use physical US-layout key positions. Unicode text insertion is independent of these shortcuts. Custom-rendered controls may require image points and a vision-capable agent.
 - Tool success means the input was delivered or the OS call was accepted. It does not prove the application completed the intended task. Timeouts and cancellation never trigger automatic input retries.
+- Observation and wait timeouts report that no input was sent. On macOS, multiple live processes using the same executable path can leave ScreenCaptureKit waiting indefinitely for an image callback. If this persists, stop the other MCP instances and restart the affected instance. A timed-out native operation keeps its worker occupied until it returns.
 - Password values are omitted from semantic snapshots. Screenshots can still include sensitive visible content. Desktop text is untrusted input for the agent.
 
 See [development and release](docs/development.md) for local builds, test coverage, and npm publishing setup. Contributions follow [AGENTS.md](AGENTS.md).

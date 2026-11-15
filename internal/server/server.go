@@ -37,7 +37,11 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 		r := e.call(ctx, func(ctx context.Context, s *state) response { return f(ctx, s, a) })
 		if r.err != nil {
 			code, detail := errorCode(r.err)
-			v := map[string]any{"code": code, "message": c.Text(code)}
+			message := c.Text(code)
+			if readOnly && (code == "timeout" || code == "canceled") {
+				message = c.Text(code + "_read_only")
+			}
+			v := map[string]any{"code": code, "message": message}
 			if detail != "" {
 				v["detail"] = detail
 			}

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"image"
 	"image/jpeg"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Sanjeever/computer-mcp/internal/desktop"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestNativeImageCoordinates(t *testing.T) {
@@ -140,4 +142,57 @@ func TestNativeImageCoordinates(t *testing.T) {
 			return
 		}
 	}
+	t.Run("stdio capture", func(t *testing.T) {
+		binary := filepath.Join(t.TempDir(), "computer-mcp")
+		build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/computer-mcp")
+		build.Dir = "../.."
+		if output, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("server build: %v\n%s", err, output)
+		}
+		for range 2 {
+			func() {
+				client := mcp.NewClient(&mcp.Implementation{Name: "native-capture-test", Version: "1"}, nil)
+				session, err := client.Connect(ctx, &mcp.CommandTransport{Command: exec.CommandContext(ctx, binary)}, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer session.Close()
+				result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "computer_window", Arguments: map[string]any{"action": "list", "by_title": target.Title}})
+				if err != nil || result.IsError {
+					t.Fatalf("list fixture: %v, %+v", err, result)
+				}
+				var listed struct {
+					Windows []desktop.Window `json:"windows"`
+				}
+				if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &listed); err != nil {
+					t.Fatal(err)
+				}
+				var id string
+				for _, w := range listed.Windows {
+					if w.PID == app.Process.Pid {
+						id = w.ID
+					}
+				}
+				if id == "" {
+					t.Fatal("fixture missing from stdio server")
+				}
+				result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "computer_observe", Arguments: map[string]any{"window_id": id, "screenshot": true, "max_width": 320}})
+				if err != nil || result.IsError {
+					t.Fatalf("stdio capture: %v, %+v", err, result)
+				}
+				found := false
+				for _, content := range result.Content {
+					if img, ok := content.(*mcp.ImageContent); ok {
+						if _, err := jpeg.DecodeConfig(bytes.NewReader(img.Data)); err != nil {
+							t.Fatal(err)
+						}
+						found = true
+					}
+				}
+				if !found {
+					t.Fatal("stdio observation returned no image")
+				}
+			}()
+		}
+	})
 }
