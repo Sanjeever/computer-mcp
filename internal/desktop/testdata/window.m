@@ -15,13 +15,32 @@
 
 @interface FixtureClickTarget : NSView
 @property(assign) NSTextField *field;
+@property NSUInteger corners;
+@property BOOL dragging;
 @end
 @implementation FixtureClickTarget
+- (BOOL)isAccessibilityElement { return YES; }
+- (NSString *)accessibilityRole { return NSAccessibilityImageRole; }
+- (NSString *)accessibilityLabel { return @"Fixture path target"; }
 - (void)drawRect:(NSRect)dirtyRect {
     [NSColor.magentaColor setFill];
     NSRectFill(self.bounds);
 }
-- (void)mouseDown:(NSEvent *)event { self.field.stringValue = @"image clicked"; }
+- (void)mouseDown:(NSEvent *)event {
+    self.corners = 0;
+    self.dragging = NO;
+    self.field.stringValue = @"image clicked";
+}
+- (void)mouseDragged:(NSEvent *)event {
+    self.dragging = YES;
+    NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+    if (p.x > 20 && p.y < 10) self.corners |= 1;
+    if (p.x > 20 && p.y > 20) self.corners |= 2;
+}
+- (void)mouseUp:(NSEvent *)event {
+    if (self.dragging)
+        self.field.stringValue = self.corners == 3 ? @"path complete" : @"path released";
+}
 @end
 
 @interface Fixture : NSObject <NSApplicationDelegate, NSTableViewDataSource>

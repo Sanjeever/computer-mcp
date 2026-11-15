@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/jpeg"
 	"os"
@@ -144,6 +145,54 @@ func TestNativeImageCoordinates(t *testing.T) {
 		if t.Failed() {
 			return
 		}
+	}
+	t.Run("continuous path and cancellation", func(t *testing.T) {
+		if r := window(ctx, s, WindowArgs{Action: "activate", WindowID: target.ID}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		if r := observe(ctx, s, ObserveArgs{WindowID: target.ID, Screenshot: true}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		var bounds desktop.Rect
+		for _, e := range s.snapshot.Elements {
+			if e.Name == "Fixture path target" {
+				bounds = e.Bounds
+			}
+		}
+		if !bounds.Valid() {
+			t.Fatal("path target missing")
+		}
+		raw := []desktop.Point{
+			{X: bounds.X + 5, Y: bounds.Y + 5}, {X: bounds.X + 25, Y: bounds.Y + 5},
+			{X: bounds.X + 25, Y: bounds.Y + 25}, {X: bounds.X + 5, Y: bounds.Y + 25},
+		}
+		path := make([]desktop.Point, len(raw))
+		for i, p := range raw {
+			path[i] = desktop.Point{X: (p.X - s.snapshot.Region.X) * float64(s.snapshot.ImageWidth) / s.snapshot.Region.Width, Y: (p.Y - s.snapshot.Region.Y) * float64(s.snapshot.ImageHeight) / s.snapshot.Region.Height}
+		}
+		if r := drag(ctx, s, DragArgs{SnapshotID: s.snapshot.ID, Path: path, Duration: 600}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		r := wait(ctx, s, WaitArgs{WindowID: target.ID, Text: "path complete", Timeout: 2000})
+		if r.err != nil || r.value.(map[string]any)["matched"] != true {
+			t.Fatalf("continuous path failed: %+v", r)
+		}
+		if r := window(ctx, s, WindowArgs{Action: "activate", WindowID: target.ID}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		cancelCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		err := b.Input(cancelCtx, "drag", desktop.Input{Path: raw, Duration: 1000})
+		cancel()
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("cancellation: %v", err)
+		}
+		r = wait(ctx, s, WaitArgs{WindowID: target.ID, Text: "path released", Timeout: 2000})
+		if r.err != nil || r.value.(map[string]any)["matched"] != true {
+			t.Fatalf("canceled drag did not release button: %+v", r)
+		}
+	})
+	if t.Failed() {
+		return
 	}
 	t.Run("floating panel", func(t *testing.T) {
 		if r := observe(ctx, s, ObserveArgs{WindowID: target.ID}); r.err != nil {

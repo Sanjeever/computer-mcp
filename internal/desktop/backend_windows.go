@@ -582,29 +582,13 @@ func (b *winBackend) Input(ctx context.Context, op string, in Input) error {
 		}
 		return send(events)
 	case "drag":
-		if err := move(in.Point); err != nil {
+		if err := move(in.Path[0]); err != nil {
 			return err
 		}
 		if err := send([]w.INPUT{mouse(w.MOUSEEVENTF_LEFTDOWN, 0)}); err != nil {
 			return errors.Join(err, send([]w.INPUT{mouse(w.MOUSEEVENTF_LEFTUP, 0)}))
 		}
-		var result error
-		steps := max(1, in.Duration/16)
-		for i := 1; i <= steps; i++ {
-			select {
-			case <-ctx.Done():
-				result = ctx.Err()
-			case <-time.After(time.Duration(in.Duration/steps) * time.Millisecond):
-			}
-			if result != nil {
-				break
-			}
-			t := float64(i) / float64(steps)
-			result = move(Point{in.Point.X + (in.To.X-in.Point.X)*t, in.Point.Y + (in.To.Y-in.Point.Y)*t})
-			if result != nil {
-				break
-			}
-		}
+		_, result := moveDrag(ctx, in, move)
 		return errors.Join(result, send([]w.INPUT{mouse(w.MOUSEEVENTF_LEFTUP, 0)}))
 	}
 	return Fail("invalid_argument", op)

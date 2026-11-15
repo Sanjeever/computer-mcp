@@ -36,17 +36,17 @@ On Windows, run in the target user's interactive session. UIPI can prevent input
 
 ## Tools
 
-| Tool               | Purpose                                                 |
-| ------------------ | ------------------------------------------------------- |
-| `computer_status`  | Platform, permission/capability checks, display bounds  |
-| `computer_window`  | List, activate, move and resize windows                 |
-| `computer_observe` | Bounded accessibility tree and optional JPEG screenshot |
-| `computer_click`   | Click a snapshot element or image point                 |
-| `computer_type`    | Insert Unicode text at the current focus                |
-| `computer_key`     | Send one keyboard chord                                 |
-| `computer_scroll`  | Scroll at a snapshot image point                        |
-| `computer_drag`    | Drag between snapshot image points                      |
-| `computer_wait`    | Wait for a window or matching accessibility text        |
+| Tool               | Purpose                                                   |
+| ------------------ | --------------------------------------------------------- |
+| `computer_status`  | Platform, permission/capability checks, display bounds    |
+| `computer_window`  | List, activate, move and resize windows                   |
+| `computer_observe` | Bounded accessibility tree and optional JPEG screenshot   |
+| `computer_click`   | Click a snapshot element or image point                   |
+| `computer_type`    | Insert Unicode text at the current focus                  |
+| `computer_key`     | Send one keyboard chord                                   |
+| `computer_scroll`  | Scroll at a snapshot image point                          |
+| `computer_drag`    | Straight or continuous path drag in snapshot image points |
+| `computer_wait`    | Wait for a window or matching accessibility text          |
 
 Start with `computer_window({"action":"list"})`, activate an exact `window_id`, then observe it. Screenshot coordinates use the returned image, with `(0, 0)` at its top left. `region` and window bounds use desktop coordinates: logical points on macOS, DPI-aware pixels on Windows. The server converts between these spaces.
 
@@ -70,6 +70,21 @@ Activation waits for confirmed window focus or a non-key panel's mouse-ready sta
 
 Window activation does not select a text field. Check the observed `focused` element, especially after opening search or a dialog. `focus_name` is that control's accessibility `name`, not the window title; omit it for unnamed controls. It waits for focus rather than moving it. A keyboard `focus_timeout` includes the last observed control name, role and focus state, with no input sent. `computer_wait` instead returns `matched:false` when its conditions time out.
 
+`computer_drag` accepts either `from` and `to`, or a `path` containing 2–128 image-coordinate points including both endpoints. A path is one continuous left-button stroke; points are joined with straight segments, so add points to approximate curves. `duration_ms` is the total path duration (100–3,000, default 500). All supplied points are validated before pressing the button, and cancellation or failure releases it. The existing two-point form remains supported.
+
+```json
+{
+  "snapshot_id": "<snapshot_id>",
+  "path": [
+    { "x": 100, "y": 100 },
+    { "x": 120, "y": 90 },
+    { "x": 145, "y": 95 },
+    { "x": 165, "y": 115 }
+  ],
+  "duration_ms": 800
+}
+```
+
 Observation supports `text`, `role`, `region`, `compact:true`, and `max_depth` (1–64). `region` filters intersecting semantic elements even without a screenshot. `root_id` with the current `snapshot_id` scopes traversal to a subtree. Traversal visits descendants before siblings, scans at most 5,000 nodes, and retains at most `max_elements` actionable references. macOS also reads associated AX labels and bounded row descendants to expose list text.
 
 Pass `since_snapshot_id` from the latest observation with the same window and filters for a diff. `elements` then contains new/changed nodes; remove `removed_element_ids` and use `element_order` to reconstruct the current bounded result. `diff_complete:false` means at least one observation was truncated: removal from the result does not establish removal from the application. Use the new `snapshot_id` for every subsequent action, including unchanged elements. Native identity changes are represented as removal/addition. Diffs reduce response size, not native traversal work.
@@ -82,7 +97,7 @@ OCR augments native controls only in window capture mode. Screen captures return
 
 - Observation defaults to 200 elements; maximum 1,000. Tree traversal has a three-second budget and reports `truncated`. Text values and names are bounded. Provider-specific delays can exceed the traversal budget.
 - Screenshots default to a maximum width of 1,440, configurable from 320 to 2,560; height is capped at 2,560. Window observations default to `capture_mode:"window"` (ScreenCaptureKit on macOS, PrintWindow on Windows). Use `capture_mode:"screen"` for the visible desktop region including overlaps; desktop mode always uses screen capture. Windows applications must support PrintWindow rendering; there is no automatic screen fallback. Screenshots return as MCP image content, not files. Window source buffers and Windows screen regions are capped at 40 million pixels.
-- Window mouse input checks the window under the click/scroll point and both drag endpoints. Seeing an obscured window in a window capture does not permit clicking through its cover; failed checks return `target_obscured`. External changes can still race these checks.
+- Window mouse input checks the window under the click/scroll point and every supplied drag path point. These checks do not inspect every pixel between vertices. Seeing an obscured window in a window capture does not permit clicking through its cover; failed checks return `target_obscured`. External changes can still race these checks.
 - Only the latest snapshot is retained. Native references are bounded by the element limit. One locked worker executes desktop requests; the queue holds at most 16. Requests have a 15-second total budget, including queue time.
 - A per-user file lock coordinates instances of this server. It does not prevent a human or other software from moving focus. `busy` means another instance owns the desktop operation.
 - Clicks are physical mouse events. Keyboard chords use virtual keys; macOS letter/digit shortcuts use physical US-layout key positions. Unicode text insertion is independent of these shortcuts. Custom-rendered controls may require image points and a vision-capable agent.

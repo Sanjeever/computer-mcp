@@ -12,7 +12,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 	"unsafe"
 )
 
@@ -170,27 +169,12 @@ func (b *macBackend) Input(ctx context.Context, op string, in Input) error {
 		}
 		return nil
 	case "drag":
-		if err := macCall("mouse", map[string]any{"x": in.Point.X, "y": in.Point.Y, "phase": "down", "button": "left", "count": 1}, nil); err != nil {
-			return err
-		}
-		p := in.Point
-		var result error
-		steps := max(1, in.Duration/16)
-		for i := 1; i <= steps; i++ {
-			select {
-			case <-ctx.Done():
-				result = ctx.Err()
-			case <-time.After(time.Duration(in.Duration/steps) * time.Millisecond):
-			}
-			if result != nil {
-				break
-			}
-			t := float64(i) / float64(steps)
-			p = Point{in.Point.X + (in.To.X-in.Point.X)*t, in.Point.Y + (in.To.Y-in.Point.Y)*t}
-			result = macCall("mouse", map[string]any{"x": p.X, "y": p.Y, "phase": "drag", "button": "left", "count": 1}, nil)
-			if result != nil {
-				break
-			}
+		p := in.Path[0]
+		result := macCall("mouse", map[string]any{"x": p.X, "y": p.Y, "phase": "down", "button": "left", "count": 1}, nil)
+		if result == nil {
+			p, result = moveDrag(ctx, in, func(point Point) error {
+				return macCall("mouse", map[string]any{"x": point.X, "y": point.Y, "phase": "drag", "button": "left", "count": 1}, nil)
+			})
 		}
 		return errors.Join(result, macCall("mouse", map[string]any{"x": p.X, "y": p.Y, "phase": "up", "button": "left", "count": 1}, nil))
 	case "click":

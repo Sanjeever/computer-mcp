@@ -268,10 +268,11 @@ type ScrollArgs struct {
 	DY         int           `json:"delta_y,omitempty"`
 }
 type DragArgs struct {
-	SnapshotID string        `json:"snapshot_id"`
-	From       desktop.Point `json:"from"`
-	To         desktop.Point `json:"to"`
-	Duration   int           `json:"duration_ms,omitempty"`
+	SnapshotID string          `json:"snapshot_id"`
+	From       *desktop.Point  `json:"from,omitempty"`
+	To         *desktop.Point  `json:"to,omitempty"`
+	Path       []desktop.Point `json:"path,omitempty"`
+	Duration   int             `json:"duration_ms,omitempty"`
 }
 type WaitArgs struct {
 	WindowID  string `json:"window_id"`
@@ -671,6 +672,17 @@ func scroll(ctx context.Context, s *state, a ScrollArgs) response {
 	return delivered(s.backend.Input(ctx, "scroll", desktop.Input{Point: p, DX: a.DX, DY: a.DY}))
 }
 func drag(ctx context.Context, s *state, a DragArgs) response {
+	path := a.Path
+	if path != nil {
+		if a.From != nil || a.To != nil || len(path) < 2 || len(path) > 128 {
+			return invalid("provide either from and to, or path with 2..128 image points")
+		}
+	} else {
+		if a.From == nil || a.To == nil {
+			return invalid("provide either from and to, or path with 2..128 image points")
+		}
+		path = []desktop.Point{*a.From, *a.To}
+	}
 	if a.Duration == 0 {
 		a.Duration = 500
 	}
@@ -681,24 +693,31 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 	if err != nil {
 		return response{err: err}
 	}
-	p, err := imagePoint(snap, a.From)
-	if err != nil {
-		return response{err: err}
-	}
-	to, err := imagePoint(snap, a.To)
-	if err != nil {
-		return response{err: err}
+	points := make([]desktop.Point, len(path))
+	for i, point := range path {
+		if err := ctx.Err(); err != nil {
+			return response{err: err}
+		}
+		points[i], err = imagePoint(snap, point)
+		if err != nil {
+			return response{err: err}
+		}
 	}
 	if snap.Window != nil {
-		if err := s.backend.CheckPoint(*snap.Window, p); err != nil {
-			return response{err: err}
-		}
-		if err := s.backend.CheckPoint(*snap.Window, to); err != nil {
-			return response{err: err}
+		for _, point := range points {
+			if err := ctx.Err(); err != nil {
+				return response{err: err}
+			}
+			if err := s.backend.CheckPoint(*snap.Window, point); err != nil {
+				return response{err: err}
+			}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return response{err: err}
+	}
 	s.snapshot = nil
-	return delivered(s.backend.Input(ctx, "drag", desktop.Input{Point: p, To: to, Duration: a.Duration}))
+	return delivered(s.backend.Input(ctx, "drag", desktop.Input{Path: points, Duration: a.Duration}))
 }
 func wait(ctx context.Context, s *state, a WaitArgs) response {
 	if a.WindowID == "" {

@@ -105,7 +105,7 @@ type RecognizedText struct {
 }
 type Input struct {
 	Point    Point
-	To       Point
+	Path     []Point
 	Button   string
 	Count    int
 	Text     string

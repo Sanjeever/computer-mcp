@@ -22,6 +22,8 @@ type fakeDesktop struct {
 	focus        desktop.Element
 	activate     bool
 	pointErr     error
+	pointChecks  []desktop.Point
+	pointFailAt  int
 	captureMode  string
 	ocr          []desktop.RecognizedText
 	ocrSupported bool
@@ -65,7 +67,13 @@ func (b *fakeDesktop) CaptureWindow(context.Context, desktop.Window, desktop.Rec
 	b.captureMode = "window"
 	return desktop.Capture{Data: []byte("test-image"), Width: 500, Height: 250}, b.err
 }
-func (b *fakeDesktop) CheckPoint(desktop.Window, desktop.Point) error { return b.pointErr }
+func (b *fakeDesktop) CheckPoint(_ desktop.Window, p desktop.Point) error {
+	b.pointChecks = append(b.pointChecks, p)
+	if b.pointFailAt > 0 && len(b.pointChecks) == b.pointFailAt {
+		return desktop.Fail("target_obscured", "intermediate point")
+	}
+	return b.pointErr
+}
 func (b *fakeDesktop) Recognize(context.Context, desktop.Capture, int) ([]desktop.RecognizedText, bool, error) {
 	return b.ocr, false, b.err
 }
