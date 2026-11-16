@@ -519,16 +519,30 @@ func (b *winBackend) Input(ctx context.Context, op string, in Input) error {
 	switch op {
 	case "type":
 		chars := utf16.Encode([]rune(in.Text))
-		for start := 0; start < len(chars); start += 64 {
+		for start := 0; start < len(chars); {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			events := []w.INPUT{}
-			for _, c := range chars[start:min(start+64, len(chars))] {
-				events = append(events, keyboard(0, c, w.KEYEVENTF_UNICODE), keyboard(0, c, w.KEYEVENTF_UNICODE|w.KEYEVENTF_KEYUP))
+			events := make([]w.INPUT, 0, 128)
+			for start < len(chars) && len(events) < 128 {
+				c := chars[start]
+				start++
+				if c == '\r' || c == '\n' {
+					if c == '\r' && start < len(chars) && chars[start] == '\n' {
+						start++
+					}
+					// VK_PACKET control characters are not Enter key events in all editors.
+					events = append(events, keyboard(w.VK_RETURN, 0, 0), keyboard(w.VK_RETURN, 0, w.KEYEVENTF_KEYUP))
+				} else {
+					events = append(events, keyboard(0, c, w.KEYEVENTF_UNICODE), keyboard(0, c, w.KEYEVENTF_UNICODE|w.KEYEVENTF_KEYUP))
+				}
 			}
 			if err := send(events); err != nil {
-				return err
+				ups := make([]w.INPUT, 0, len(events)/2)
+				for i := len(events) - 1; i >= 0; i -= 2 {
+					ups = append(ups, events[i])
+				}
+				return errors.Join(err, send(ups))
 			}
 		}
 		return nil

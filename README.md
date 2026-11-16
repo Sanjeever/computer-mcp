@@ -60,6 +60,8 @@ macOS floating tool panels are listed as separate windows. Observe and interact 
 
 Pass that response's `snapshot_id` and an `element_id` to `computer_click`, or use `point: {"x": 120, "y": 80}` when a screenshot was requested. Provide exactly one target. `computer_type` and `computer_key` require an active `window_id`. Text is inserted at the current caret or replaces the current selection according to application behavior; the clipboard is unchanged. To replace all text, explicitly select it first: `["meta", "a"]` on macOS or `["ctrl", "a"]` on Windows, then type.
 
+On Windows, `computer_type` sends each LF, CRLF, or standalone CR as one Enter keystroke. Multiline editors normally insert a line break; other controls may submit a form or perform their usual Enter action.
+
 Observe again after input. A new observation, a wait, window mutation, or input invalidates the previous snapshot; untouched snapshots expire after 60 seconds. This applies across all windows and the desktop: a desktop observation replaces a window snapshot too. After `stale_snapshot`, observe the intended target again and use the new references and screenshot coordinates. Geometry, focus, and element properties are checked before input. These checks cannot make desktop interaction atomic with external changes.
 
 For the Dock, taskbar, menus, or an empty desktop, use `computer_observe({"desktop":true})`. This returns a screenshot of the first display without a window or semantic elements. Set `region` to a desktop rectangle from `computer_status` to select another display or capture across displays. Coordinate input from a desktop snapshot checks the display layout instead of window focus. Window listing covers visible, non-minimized application windows.
