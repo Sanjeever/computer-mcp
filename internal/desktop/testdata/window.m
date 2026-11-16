@@ -29,7 +29,7 @@
 - (void)mouseDown:(NSEvent *)event {
     self.corners = 0;
     self.dragging = NO;
-    self.field.stringValue = @"image clicked";
+    self.field.stringValue = (event.modifierFlags & NSEventModifierFlagShift) ? @"shift clicked" : @"image clicked";
 }
 - (void)mouseDragged:(NSEvent *)event {
     self.dragging = YES;

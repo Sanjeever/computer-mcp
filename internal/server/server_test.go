@@ -36,7 +36,7 @@ func TestProtocolAndLanguages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(list.Tools) != 9 {
+			if len(list.Tools) != 10 {
 				t.Fatalf("tools=%d", len(list.Tools))
 			}
 			for _, tool := range list.Tools {
@@ -62,6 +62,7 @@ func TestProtocolAndLanguages(t *testing.T) {
 			for _, args := range []map[string]any{
 				{"snapshot_id": "missing", "from": map[string]any{"x": 0, "y": 0}, "to": map[string]any{"x": 10, "y": 10}},
 				{"snapshot_id": "missing", "path": []map[string]any{{"x": 0, "y": 0}, {"x": 10, "y": 10}}},
+				{"snapshot_id": "missing", "path": []map[string]any{{"x": 0, "y": 0}, {"x": 10, "y": 10}}, "hold_keys": []string{"space", "shift"}},
 			} {
 				result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "computer_drag", Arguments: args})
 				if err != nil || !result.IsError {
@@ -73,6 +74,25 @@ func TestProtocolAndLanguages(t *testing.T) {
 				}
 				if got.Code != "stale_snapshot" {
 					t.Fatalf("valid drag rejected before snapshot validation: %+v", got)
+				}
+			}
+			for _, name := range []string{"computer_click", "computer_scroll", "computer_move"} {
+				args := map[string]any{"snapshot_id": "missing", "point": map[string]any{"x": 10, "y": 10}}
+				if name == "computer_move" {
+					args["hover_ms"] = 600
+				} else {
+					args["hold_keys"] = []string{"ctrl"}
+					if name == "computer_scroll" {
+						args["delta_y"] = 1
+					}
+				}
+				result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+				if err != nil || result == nil || !result.IsError {
+					t.Fatalf("%s schema: %v %+v", name, err, result)
+				}
+				var got struct{ Code string }
+				if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil || got.Code != "stale_snapshot" {
+					t.Fatalf("%s rejected before snapshot validation: %+v %v", name, got, err)
 				}
 			}
 			for _, readOnly := range []bool{true, false} {

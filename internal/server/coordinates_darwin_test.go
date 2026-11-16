@@ -146,6 +146,38 @@ func TestNativeImageCoordinates(t *testing.T) {
 			return
 		}
 	}
+	t.Run("held mouse keys", func(t *testing.T) {
+		for _, held := range []bool{true, false} {
+			if r := observe(ctx, s, ObserveArgs{WindowID: target.ID}); r.err != nil {
+				t.Fatal(r.err)
+			}
+			var id string
+			for _, e := range s.snapshot.Elements {
+				if e.Name == "Fixture path target" {
+					id = e.ID
+				}
+			}
+			if id == "" {
+				t.Fatal("path target missing")
+			}
+			args := ClickArgs{SnapshotID: s.snapshot.ID, ElementID: id}
+			text := "image clicked"
+			if held {
+				args.HoldKeys = []string{"shift"}
+				text = "shift clicked"
+			}
+			if r := click(ctx, s, args); r.err != nil {
+				t.Fatal(r.err)
+			}
+			r := wait(ctx, s, WaitArgs{WindowID: target.ID, Text: text, Timeout: 2000})
+			if r.err != nil || r.value.(map[string]any)["matched"] != true {
+				t.Fatalf("held=%v: %+v", held, r)
+			}
+		}
+	})
+	if t.Failed() {
+		return
+	}
 	t.Run("continuous path and cancellation", func(t *testing.T) {
 		if r := window(ctx, s, WindowArgs{Action: "activate", WindowID: target.ID}); r.err != nil {
 			t.Fatal(r.err)

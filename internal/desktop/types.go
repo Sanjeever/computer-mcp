@@ -110,6 +110,7 @@ type Input struct {
 	Count    int
 	Text     string
 	Keys     []string
+	HoldKeys []string
 	DX       int
 	DY       int
 	Duration int

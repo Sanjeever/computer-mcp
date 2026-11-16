@@ -15,6 +15,7 @@ func New(version string, c i18n.Catalog, e *Engine) *mcp.Server {
 	register(s, e, c, "computer_window", false, window)
 	register(s, e, c, "computer_observe", true, observe)
 	register(s, e, c, "computer_click", false, click)
+	register(s, e, c, "computer_move", false, move)
 	register(s, e, c, "computer_type", false, typeText)
 	register(s, e, c, "computer_key", false, key)
 	register(s, e, c, "computer_scroll", false, scroll)

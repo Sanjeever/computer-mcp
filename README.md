@@ -42,6 +42,7 @@ On Windows, run in the target user's interactive session. UIPI can prevent input
 | `computer_window`  | List, activate, move and resize windows                   |
 | `computer_observe` | Bounded accessibility tree and optional JPEG screenshot   |
 | `computer_click`   | Click a snapshot element or image point                   |
+| `computer_move`    | Move the mouse to an image point, optionally hover        |
 | `computer_type`    | Insert Unicode text at the current focus                  |
 | `computer_key`     | Send one keyboard chord                                   |
 | `computer_scroll`  | Scroll at a snapshot image point                          |
@@ -74,6 +75,10 @@ Activation waits for confirmed window focus or a non-key panel's mouse-ready sta
 
 Windows can deny foreground activation. This returns `activation_failed` with the target and current foreground window IDs; activate the target manually, then observe it again. Activation never sends hidden keystrokes or clicks to bypass the restriction. A modal blocker's ID is returned in the `window_blocked` error detail; observe and interact with that window separately.
 
+`computer_click`, `computer_scroll`, and `computer_drag` accept `hold_keys`, an optional array of unique `ctrl`, `alt`, `shift`, `meta`, and `space` keys. They stay pressed during that action and are released afterward, including on cancellation or failure. These combined actions require a window snapshot whose window has `active:true`; desktop snapshots and mouse-only panels are rejected. Effects depend on the application: Shift-drag may constrain drawing, Space-drag may pan a canvas, and Ctrl-scroll may zoom. For example, add `"hold_keys":["space"]` to a drag request to pan a compatible canvas. Keys never stay held across tool calls.
+
+`computer_move` takes `snapshot_id` and an image `point`, with optional `hover_ms` (0–3,000, default 0). It moves without clicking and waits for the requested hover time before returning. It uses the same coordinate, window readiness, and occlusion checks as other point input, and consumes the snapshot. Observe again to inspect any tooltip or menu, for example after `computer_move({"snapshot_id":"<snapshot_id>","point":{"x":120,"y":80},"hover_ms":600})`.
+
 Window activation does not select a text field. Check the observed `focused` element, especially after opening search or a dialog. `focus_name` is that control's accessibility `name`; omit it for unnamed controls. It waits for focus rather than moving it. A keyboard `focus_timeout` includes the last observed control name, role and focus state, with no input sent.
 
 `computer_drag` accepts either `from` and `to`, or a `path` containing 2–128 image-coordinate points including both endpoints. A path is one continuous left-button stroke; points are joined with straight segments, so add points to approximate curves. `duration_ms` is the total path duration (100–3,000, default 500). All supplied points are validated before pressing the button, and cancellation or failure releases it.
@@ -101,7 +106,7 @@ On macOS, `ocr:true` runs local Vision recognition on the returned screenshot (`
 
 - Observation defaults to 200 elements; maximum 1,000. Tree traversal scans at most 5,000 nodes, has a three-second budget, and reports `truncated` when incomplete. Text values and names are bounded. Provider-specific delays can exceed the traversal budget.
 - Screenshots default to a maximum width of 1,440, configurable from 320 to 2,560; height is capped at 2,560. Window observations default to `capture_mode:"window"` (ScreenCaptureKit on macOS, PrintWindow on Windows). Use `capture_mode:"screen"` for the visible desktop region including overlaps; desktop mode always uses screen capture. Windows applications must support PrintWindow rendering; there is no automatic screen fallback. Screenshots return as MCP image content, not files. Window source buffers and Windows screen regions are capped at 40 million pixels.
-- Window mouse input checks the window under the click/scroll point and every supplied drag path point. These checks do not inspect every pixel between vertices. Seeing an obscured window in a window capture does not permit clicking through its cover; failed checks return `target_obscured`. External changes can still race these checks.
+- Window mouse input checks the window under the click/move/scroll point and every supplied drag path point. These checks do not inspect every pixel between vertices. Seeing an obscured window in a window capture does not permit clicking through its cover; failed checks return `target_obscured`. External changes can still race these checks.
 - Only the latest snapshot is actionable; its observation data is also retained as the next diff base. Native references are bounded by the element limit. One locked worker executes desktop requests; the queue holds at most 16. Requests have a 15-second total budget, including queue time.
 - A per-user file lock coordinates instances of this server. It does not prevent a human or other software from moving focus. `busy` means the local queue is full or another instance holds the lock.
 - Clicks are physical mouse events. Keyboard chords use virtual keys; macOS letter/digit shortcuts use physical US-layout key positions. Unicode text insertion is independent of these shortcuts. Custom-rendered controls may require image points and a vision-capable agent.

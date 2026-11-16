@@ -15,6 +15,7 @@ type fakeDesktop struct {
 	nodes        []desktop.Element
 	inputs       int
 	input        desktop.Input
+	inputOp      string
 	calls        int
 	err          error
 	inputErr     error
@@ -58,9 +59,10 @@ func (b *fakeDesktop) Window(w desktop.Window, a string, r desktop.Rect) error {
 	return b.err
 }
 func (b *fakeDesktop) Focus(desktop.Window) (desktop.Element, error) { return b.focus, b.err }
-func (b *fakeDesktop) Input(_ context.Context, _ string, in desktop.Input) error {
+func (b *fakeDesktop) Input(_ context.Context, op string, in desktop.Input) error {
 	b.inputs++
 	b.input = in
+	b.inputOp = op
 	return b.inputErr
 }
 func (b *fakeDesktop) Capture(context.Context, desktop.Rect, int) (desktop.Capture, error) {

@@ -515,11 +515,31 @@ func keyCode(k string) w.VIRTUAL_KEY {
 	}
 	return map[string]w.VIRTUAL_KEY{"ctrl": w.VK_CONTROL, "alt": w.VK_MENU, "shift": w.VK_SHIFT, "meta": w.VK_LWIN, "enter": w.VK_RETURN, "tab": w.VK_TAB, "escape": w.VK_ESCAPE, "space": w.VK_SPACE, "backspace": w.VK_BACK, "delete": w.VK_DELETE, "home": w.VK_HOME, "end": w.VK_END, "pageup": w.VK_PRIOR, "pagedown": w.VK_NEXT, "left": w.VK_LEFT, "right": w.VK_RIGHT, "up": w.VK_UP, "down": w.VK_DOWN}[k]
 }
-func (b *winBackend) Input(ctx context.Context, op string, in Input) error {
+func (b *winBackend) Input(ctx context.Context, op string, in Input) (result error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if len(in.HoldKeys) > 0 {
+		downs, ups := []w.INPUT{}, []w.INPUT{}
+		for _, k := range in.HoldKeys {
+			flags := w.KEYBD_EVENT_FLAGS(0)
+			if k == "meta" {
+				flags = w.KEYEVENTF_EXTENDEDKEY
+			}
+			downs = append(downs, keyboard(keyCode(k), 0, flags))
+			ups = append([]w.INPUT{keyboard(keyCode(k), 0, flags|w.KEYEVENTF_KEYUP)}, ups...)
+		}
+		defer func() { result = errors.Join(result, send(ups)) }()
+		if err := send(downs); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
 	switch op {
+	case "move":
+		return move(in.Point)
 	case "type":
 		chars := utf16.Encode([]rune(in.Text))
 		for start := 0; start < len(chars); {

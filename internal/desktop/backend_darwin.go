@@ -144,11 +144,24 @@ func (b *macBackend) capture(ctx context.Context, id string, r Rect, width int) 
 	defer C.free(unsafe.Pointer(ptr))
 	return Capture{Data: C.GoBytes(unsafe.Pointer(ptr), C.int(length)), Width: int(ow), Height: int(oh)}, nil
 }
-func (b *macBackend) Input(ctx context.Context, op string, in Input) error {
+func (b *macBackend) Input(ctx context.Context, op string, in Input) (result error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if len(in.HoldKeys) > 0 {
+		defer func() {
+			result = errors.Join(result, macCall("hold_keys", map[string]any{"keys": in.HoldKeys, "down": false}, nil))
+		}()
+		if err := macCall("hold_keys", map[string]any{"keys": in.HoldKeys, "down": true}, nil); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
 	switch op {
+	case "move":
+		return macCall("mouse", map[string]any{"x": in.Point.X, "y": in.Point.Y, "phase": "move"}, nil)
 	case "type":
 		chars := []rune(in.Text)
 		for start := 0; start < len(chars); {
@@ -170,30 +183,28 @@ func (b *macBackend) Input(ctx context.Context, op string, in Input) error {
 		return nil
 	case "drag":
 		p := in.Path[0]
-		result := macCall("mouse", map[string]any{"x": p.X, "y": p.Y, "phase": "down", "button": "left", "count": 1}, nil)
+		result := macCall("mouse", map[string]any{"x": p.X, "y": p.Y, "phase": "down", "button": "left", "count": 1, "hold_keys": in.HoldKeys}, nil)
 		if result == nil {
 			p, result = moveDrag(ctx, in, func(point Point) error {
-				return macCall("mouse", map[string]any{"x": point.X, "y": point.Y, "phase": "drag", "button": "left", "count": 1}, nil)
+				return macCall("mouse", map[string]any{"x": point.X, "y": point.Y, "phase": "drag", "button": "left", "count": 1, "hold_keys": in.HoldKeys}, nil)
 			})
 		}
-		return errors.Join(result, macCall("mouse", map[string]any{"x": p.X, "y": p.Y, "phase": "up", "button": "left", "count": 1}, nil))
+		return errors.Join(result, macCall("mouse", map[string]any{"x": p.X, "y": p.Y, "phase": "up", "button": "left", "count": 1, "hold_keys": in.HoldKeys}, nil))
 	case "click":
 		for i := 1; i <= in.Count; i++ {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			args := map[string]any{"x": in.Point.X, "y": in.Point.Y, "button": in.Button, "count": i, "phase": "down"}
-			if err := macCall("mouse", args, nil); err != nil {
-				return err
-			}
+			args := map[string]any{"x": in.Point.X, "y": in.Point.Y, "button": in.Button, "count": i, "phase": "down", "hold_keys": in.HoldKeys}
+			err := macCall("mouse", args, nil)
 			args["phase"] = "up"
-			if err := macCall("mouse", args, nil); err != nil {
+			if err := errors.Join(err, macCall("mouse", args, nil)); err != nil {
 				return err
 			}
 		}
 		return nil
 	case "scroll":
-		return macCall("scroll", map[string]any{"x": in.Point.X, "y": in.Point.Y, "dx": in.DX, "dy": in.DY}, nil)
+		return macCall("scroll", map[string]any{"x": in.Point.X, "y": in.Point.Y, "dx": in.DX, "dy": in.DY, "hold_keys": in.HoldKeys}, nil)
 	case "key":
 		return macCall("key", map[string]any{"keys": in.Keys}, nil)
 	}

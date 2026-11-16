@@ -460,6 +460,22 @@ static CGKeyCode keyCode(NSString *key) {
     };
     return [map[key] unsignedShortValue];
 }
+static CGEventFlags keyFlags(NSArray *keys) {
+    CGEventFlags flags = 0;
+    if (![keys isKindOfClass:NSArray.class])
+        return flags;
+    for (NSString *key in keys) {
+        if ([key isEqualToString:@"meta"])
+            flags |= kCGEventFlagMaskCommand;
+        else if ([key isEqualToString:@"ctrl"])
+            flags |= kCGEventFlagMaskControl;
+        else if ([key isEqualToString:@"alt"])
+            flags |= kCGEventFlagMaskAlternate;
+        else if ([key isEqualToString:@"shift"])
+            flags |= kCGEventFlagMaskShift;
+    }
+    return flags;
+}
 static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
     if ([op isEqualToString:@"status"]) {
         CGDirectDisplayID ids[32];
@@ -564,7 +580,9 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
                 ? kCGMouseButtonRight
                 : ([button isEqualToString:@"middle"] ? kCGMouseButtonCenter : kCGMouseButtonLeft);
         CGEventType type;
-        if ([phase isEqualToString:@"drag"])
+        if ([phase isEqualToString:@"move"])
+            type = kCGEventMouseMoved;
+        else if ([phase isEqualToString:@"drag"])
             type = kCGEventLeftMouseDragged;
         else if ([phase isEqualToString:@"down"])
             type = b == kCGMouseButtonLeft ? kCGEventLeftMouseDown
@@ -578,7 +596,7 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
         if (!event)
             return failure(@"native_error", @"create mouse event");
         CGEventSetIntegerValueField(event, kCGMouseEventClickState, [args[@"count"] intValue]);
-        CGEventSetFlags(event, 0);
+        CGEventSetFlags(event, keyFlags(args[@"hold_keys"]));
         CGEventPost(kCGHIDEventTap, event);
         CFRelease(event);
         return @{};
@@ -602,19 +620,29 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
         free(chars);
         return @{};
     }
+    if ([op isEqualToString:@"hold_keys"]) {
+        NSArray *keys = args[@"keys"];
+        BOOL down = [args[@"down"] boolValue], failed = NO;
+        CGEventFlags flags = down ? 0 : keyFlags(keys);
+        NSArray *ordered = down ? keys : keys.reverseObjectEnumerator.allObjects;
+        for (NSString *key in ordered) {
+            CGEventFlags flag = keyFlags(@[key]);
+            flags = down ? flags | flag : flags & ~flag;
+            CGEventRef event = CGEventCreateKeyboardEvent(NULL, keyCode(key), down);
+            if (!event) {
+                failed = YES;
+                if (down) break;
+                continue;
+            }
+            CGEventSetFlags(event, flags);
+            CGEventPost(kCGHIDEventTap, event);
+            CFRelease(event);
+        }
+        return failed ? failure(@"native_error", @"create held-key event") : @{};
+    }
     if ([op isEqualToString:@"key"]) {
         NSArray *keys = args[@"keys"];
-        CGEventFlags flags = 0;
-        for (NSString *key in keys) {
-            if ([key isEqualToString:@"meta"])
-                flags |= kCGEventFlagMaskCommand;
-            else if ([key isEqualToString:@"ctrl"])
-                flags |= kCGEventFlagMaskControl;
-            else if ([key isEqualToString:@"alt"])
-                flags |= kCGEventFlagMaskAlternate;
-            else if ([key isEqualToString:@"shift"])
-                flags |= kCGEventFlagMaskShift;
-        }
+        CGEventFlags flags = keyFlags(keys);
         CGKeyCode code = keyCode(keys.lastObject);
         for (int down = 1; down >= 0; down--) {
             CGEventRef event = CGEventCreateKeyboardEvent(NULL, code, down);
@@ -631,12 +659,14 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
         CGEventRef move = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, p, kCGMouseButtonLeft);
         if (!move)
             return failure(@"native_error", @"create mouse event");
+        CGEventSetFlags(move, keyFlags(args[@"hold_keys"]));
         CGEventPost(kCGHIDEventTap, move);
         CFRelease(move);
         CGEventRef event = CGEventCreateScrollWheelEvent(
             NULL, kCGScrollEventUnitLine, 2, -[args[@"dy"] intValue], -[args[@"dx"] intValue]);
         if (!event)
             return failure(@"native_error", @"create scroll event");
+        CGEventSetFlags(event, keyFlags(args[@"hold_keys"]));
         CGEventPost(kCGHIDEventTap, event);
         CFRelease(event);
         return @{};

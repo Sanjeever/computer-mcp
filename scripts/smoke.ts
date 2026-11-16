@@ -55,7 +55,7 @@ try {
   assert.equal((initialized.serverInfo as { name: string }).name, "computer-mcp");
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
   const tools = await request("tools/list", {});
-  assert.equal((tools.tools as unknown[]).length, 9);
+  assert.equal((tools.tools as unknown[]).length, 10);
   const status = await request("tools/call", { name: "computer_status", arguments: {} });
   assert.notEqual(status.isError, true, JSON.stringify(status));
   const content = status.content as { type: string; text: string }[];

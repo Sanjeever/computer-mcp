@@ -246,6 +246,12 @@ type ClickArgs struct {
 	Point      *desktop.Point `json:"point,omitempty"`
 	Button     string         `json:"button,omitempty"`
 	Count      int            `json:"count,omitempty"`
+	HoldKeys   []string       `json:"hold_keys,omitempty"`
+}
+type MoveArgs struct {
+	SnapshotID string        `json:"snapshot_id"`
+	Point      desktop.Point `json:"point"`
+	Hover      int           `json:"hover_ms,omitempty"`
 }
 type TypeArgs struct {
 	WindowID     string `json:"window_id"`
@@ -266,6 +272,7 @@ type ScrollArgs struct {
 	Point      desktop.Point `json:"point"`
 	DX         int           `json:"delta_x,omitempty"`
 	DY         int           `json:"delta_y,omitempty"`
+	HoldKeys   []string      `json:"hold_keys,omitempty"`
 }
 type DragArgs struct {
 	SnapshotID string          `json:"snapshot_id"`
@@ -273,6 +280,7 @@ type DragArgs struct {
 	To         *desktop.Point  `json:"to,omitempty"`
 	Path       []desktop.Point `json:"path,omitempty"`
 	Duration   int             `json:"duration_ms,omitempty"`
+	HoldKeys   []string        `json:"hold_keys,omitempty"`
 }
 type WaitArgs struct {
 	WindowID  string `json:"window_id"`
@@ -575,7 +583,7 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	if (a.Button != "left" && a.Button != "right" && a.Button != "middle") || a.Count < 1 || a.Count > 2 {
 		return invalid("button: left/right/middle; count: 1/2")
 	}
-	snap, err := s.current(a.SnapshotID)
+	snap, err := s.mouseSnapshot(a.SnapshotID, a.HoldKeys)
 	if err != nil {
 		return response{err: err}
 	}
@@ -612,7 +620,57 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 		}
 	}
 	s.snapshot = nil
-	return delivered(s.backend.Input(ctx, "click", desktop.Input{Point: p, Button: a.Button, Count: a.Count}))
+	return delivered(s.backend.Input(ctx, "click", desktop.Input{Point: p, Button: a.Button, Count: a.Count, HoldKeys: a.HoldKeys}))
+}
+func (s *state) mouseSnapshot(id string, keys []string) (*Snapshot, error) {
+	seen := map[string]bool{}
+	for _, k := range keys {
+		if seen[k] || (k != "ctrl" && k != "alt" && k != "shift" && k != "meta" && k != "space") {
+			return nil, desktop.Fail("invalid_argument", "hold_keys accepts unique ctrl, alt, shift, meta, space keys")
+		}
+		seen[k] = true
+	}
+	snap, err := s.current(id)
+	if err != nil || len(keys) == 0 {
+		return snap, err
+	}
+	if snap.Window == nil {
+		return nil, desktop.Fail("invalid_argument", "hold_keys requires an active window snapshot")
+	}
+	_, err = findWindow(s.backend, snap.Window.ID, true)
+	return snap, err
+}
+func move(ctx context.Context, s *state, a MoveArgs) response {
+	if a.Hover < 0 || a.Hover > 3000 {
+		return invalid("hover_ms: 0..3000")
+	}
+	snap, err := s.current(a.SnapshotID)
+	if err != nil {
+		return response{err: err}
+	}
+	p, err := imagePoint(snap, a.Point)
+	if err != nil {
+		return response{err: err}
+	}
+	if snap.Window != nil {
+		if err := s.backend.CheckPoint(*snap.Window, p); err != nil {
+			return response{err: err}
+		}
+	}
+	s.snapshot = nil
+	if err := s.backend.Input(ctx, "move", desktop.Input{Point: p}); err != nil {
+		return delivered(err)
+	}
+	if a.Hover > 0 {
+		timer := time.NewTimer(time.Duration(a.Hover) * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return delivered(ctx.Err())
+		case <-timer.C:
+		}
+	}
+	return delivered(nil)
 }
 func typeText(ctx context.Context, s *state, a TypeArgs) response {
 	if a.WindowID == "" || len(a.Text) == 0 || len(a.Text) > 65536 || strings.ContainsRune(a.Text, 0) {
@@ -655,7 +713,7 @@ func scroll(ctx context.Context, s *state, a ScrollArgs) response {
 	if a.DX < -100 || a.DX > 100 || a.DY < -100 || a.DY > 100 || (a.DX == 0 && a.DY == 0) {
 		return invalid("nonzero wheel delta in -100..100 required")
 	}
-	snap, err := s.current(a.SnapshotID)
+	snap, err := s.mouseSnapshot(a.SnapshotID, a.HoldKeys)
 	if err != nil {
 		return response{err: err}
 	}
@@ -669,7 +727,7 @@ func scroll(ctx context.Context, s *state, a ScrollArgs) response {
 		}
 	}
 	s.snapshot = nil
-	return delivered(s.backend.Input(ctx, "scroll", desktop.Input{Point: p, DX: a.DX, DY: a.DY}))
+	return delivered(s.backend.Input(ctx, "scroll", desktop.Input{Point: p, DX: a.DX, DY: a.DY, HoldKeys: a.HoldKeys}))
 }
 func drag(ctx context.Context, s *state, a DragArgs) response {
 	path := a.Path
@@ -689,7 +747,7 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 	if a.Duration < 100 || a.Duration > 3000 {
 		return invalid("duration_ms: 100..3000")
 	}
-	snap, err := s.current(a.SnapshotID)
+	snap, err := s.mouseSnapshot(a.SnapshotID, a.HoldKeys)
 	if err != nil {
 		return response{err: err}
 	}
@@ -717,7 +775,7 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 		return response{err: err}
 	}
 	s.snapshot = nil
-	return delivered(s.backend.Input(ctx, "drag", desktop.Input{Path: points, Duration: a.Duration}))
+	return delivered(s.backend.Input(ctx, "drag", desktop.Input{Path: points, Duration: a.Duration, HoldKeys: a.HoldKeys}))
 }
 func wait(ctx context.Context, s *state, a WaitArgs) response {
 	if a.WindowID == "" {

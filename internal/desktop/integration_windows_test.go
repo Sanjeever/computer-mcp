@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -20,6 +22,7 @@ import (
 type windowsFixture struct {
 	Window     Window
 	Editor     w.HWND
+	Canvas     w.HWND
 	InactiveID string
 }
 
@@ -48,6 +51,42 @@ func TestWindowsFixtureProcess(t *testing.T) {
 	if editor == 0 {
 		t.Fatal(code)
 	}
+	canvas, code := w.CreateWindowExW(0, w.StrToPwstr("STATIC"), w.StrToPwstr(""), w.WS_CHILD|w.WS_VISIBLE|w.WINDOW_STYLE(w.SS_NOTIFY), 12, 530, 1100, 100, root, 0, 0, nil)
+	if canvas == 0 {
+		t.Fatal(code)
+	}
+	var mouseEvents []string
+	for _, target := range []w.HWND{canvas, root, editor} {
+		var original uintptr
+		procedure := syscall.NewCallback(func(h w.HWND, message uint32, param w.WPARAM, data w.LPARAM) w.LRESULT {
+			if h == canvas && message == w.WM_APP {
+				mouseEvents = nil
+				w.SetWindowTextW(canvas, w.StrToPwstr(""))
+				return 0
+			}
+			kind := ""
+			switch message {
+			case w.WM_MOUSEMOVE:
+				kind = "move"
+			case w.WM_LBUTTONDOWN:
+				w.SetFocus(h)
+				kind = "down"
+			case w.WM_LBUTTONUP:
+				kind = "up"
+			case w.WM_MOUSEWHEEL, w.WM_MOUSEHWHEEL:
+				kind = "scroll"
+			}
+			if kind != "" {
+				mouseEvents = append(mouseEvents, fmt.Sprintf("%s:%d:%t", kind, uint32(param)&0xffff, w.GetKeyState(int32(w.VK_SPACE)) < 0))
+				w.SetWindowTextW(canvas, w.StrToPwstr(strings.Join(mouseEvents, "|")))
+			}
+			return w.CallWindowProcW(original, h, message, param, data)
+		})
+		original, code = w.SetWindowLongPtrW(target, w.GWLP_WNDPROC, procedure)
+		if original == 0 {
+			t.Fatal(code)
+		}
+	}
 	w.SetForegroundWindow(root)
 	w.SetFocus(editor)
 	deadline := time.Now().Add(2 * time.Second)
@@ -66,7 +105,7 @@ func TestWindowsFixtureProcess(t *testing.T) {
 	}
 	var rect w.RECT
 	w.GetWindowRect(root, &rect)
-	fixture := windowsFixture{Window: Window{ID: strconv.FormatUint(uint64(root), 10), PID: os.Getpid(), Title: "Computer MCP Windows fixture", Bounds: winRect(rect)}, Editor: editor}
+	fixture := windowsFixture{Window: Window{ID: strconv.FormatUint(uint64(root), 10), PID: os.Getpid(), Title: "Computer MCP Windows fixture", Bounds: winRect(rect)}, Editor: editor, Canvas: canvas}
 	if os.Getenv("COMPUTER_MCP_WINDOWS_ACTIVATION_TEST") == "1" && w.GetForegroundWindow() == root {
 		other, code := w.CreateWindowExW(0, w.StrToPwstr("STATIC"), w.StrToPwstr("Computer MCP inactive fixture"), w.WS_OVERLAPPEDWINDOW, 300, 300, 400, 200, 0, 0, 0, nil)
 		if other == 0 {
@@ -227,6 +266,68 @@ func TestNativeWindowsActivation(t *testing.T) {
 	}
 	if got := fixtureText(t, fixture.Editor); got != "" {
 		t.Fatalf("activation sent text: %q", got)
+	}
+}
+
+func TestNativeWindowsMouse(t *testing.T) {
+	b, fixture := startWindowsFixture(t)
+	ctx := context.Background()
+	var rect w.RECT
+	if ok, code := w.GetWindowRect(fixture.Canvas, &rect); ok == 0 {
+		t.Fatal(code)
+	}
+	p := winRect(rect).Center()
+	if err := b.CheckPoint(fixture.Window, p); err != nil {
+		t.Fatal(err)
+	}
+	check := func(want string) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		var got string
+		for time.Now().Before(deadline) {
+			got = fixtureText(t, fixture.Canvas)
+			if strings.Contains(got, want) {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("mouse event: got %q, want %q", got, want)
+	}
+	for _, test := range []struct {
+		op   string
+		in   Input
+		want string
+	}{
+		{"move", Input{Point: p}, "move:0:false"},
+		{"click", Input{Point: p, Button: "left", Count: 1, HoldKeys: []string{"ctrl", "shift"}}, "up:12:false"},
+		{"scroll", Input{Point: p, DY: 1, HoldKeys: []string{"ctrl"}}, "scroll:8:false"},
+		{"drag", Input{Path: []Point{p, {X: p.X + 50, Y: p.Y}}, Duration: 100, HoldKeys: []string{"space", "shift"}}, "up:4:true"},
+	} {
+		requireFixtureActive(t, fixture)
+		fixtureMessage(t, fixture.Canvas, w.WM_APP, 0, 0)
+		if err := b.Input(ctx, test.op, test.in); err != nil {
+			t.Fatal(err)
+		}
+		check(test.want)
+		for _, key := range []w.VIRTUAL_KEY{w.VK_CONTROL, w.VK_SHIFT, w.VK_SPACE, w.VK_LBUTTON} {
+			if w.GetAsyncKeyState(int32(key)) < 0 {
+				t.Fatalf("key %d held after %s", key, test.op)
+			}
+		}
+	}
+	requireFixtureActive(t, fixture)
+	fixtureMessage(t, fixture.Canvas, w.WM_APP, 0, 0)
+	cancelCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	err := b.Input(cancelCtx, "drag", Input{Path: []Point{p, {X: p.X + 100, Y: p.Y}}, Duration: 1000, HoldKeys: []string{"space", "shift"}})
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("drag cancellation: %v", err)
+	}
+	check("up:4:true")
+	for _, key := range []w.VIRTUAL_KEY{w.VK_SHIFT, w.VK_SPACE, w.VK_LBUTTON} {
+		if w.GetAsyncKeyState(int32(key)) < 0 {
+			t.Fatalf("key %d held after cancellation", key)
+		}
 	}
 }
 
