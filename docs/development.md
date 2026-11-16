@@ -47,6 +47,7 @@ Window capture and screen capture are explicit choices because an unobscured win
 
 - [Server tests](../internal/server/) cover snapshot invalidation, coordinate mapping, focus and input validation, cancellation, password redaction, OCR, diffs, and MCP contracts using a fake backend where desktop interaction is involved. [Catalog tests](../internal/i18n/i18n_test.go) check language-key parity; [launcher tests](../src/launcher.test.ts) check platform selection and missing-package errors.
 - [Desktop fixture tests](../internal/desktop/integration_darwin_test.go) cover native macOS input, window identity, text extraction, capture, and OCR. [Server fixture tests](../internal/server/coordinates_darwin_test.go) verify clicks against actual JPEG targets through resize/crop and window movement, floating panels, continuous drags, cancellation cleanup, and real stdio capture.
+- [Windows fixture tests](../internal/desktop/integration_windows_test.go) cover Unicode and multiline input in dedicated Edit and RichEdit controls, UIA values and focus, and native activation. [Capture tests](../internal/desktop/capture_windows_test.go) check JPEG dimensions without a desktop and cropped/scaled PrintWindow and screen captures in the interactive fixture. RichEdit UIA values use CR paragraph separators and include a final paragraph mark; they need not match an application's saved-file line endings.
 
 Native UI acceptance should use a dedicated test window in an interactive session. Verify Unicode text, click, keyboard selection, scrolling, dragging, screenshots, focus rejection, and stale references. Repeat at multiple scaling factors and with secondary monitors before claiming those configurations are validated. Do not automate input into personal applications during tests.
 
@@ -56,7 +57,15 @@ On macOS, set the cgo flags above, then run:
 COMPUTER_MCP_NATIVE_TEST=1 go test -p 1 -v ./internal/desktop ./internal/server
 ```
 
-Run native packages serially so their fixture windows do not compete for focus. Tests skip with a reason when Accessibility or Screen Recording permission is absent. The interaction fixture currently covers macOS; Windows CI runs native status and stdio checks, which do not establish PrintWindow rendering or UIA interaction compatibility.
+On Windows, run in an interactive desktop session:
+
+```powershell
+$env:COMPUTER_MCP_NATIVE_TEST = "1"
+go test -p 1 -v ./internal/desktop
+Remove-Item Env:COMPUTER_MCP_NATIVE_TEST
+```
+
+Run native packages serially so their fixture windows do not compete for focus, and leave the desktop idle. Windows fixtures may explicitly click their own verified edit control to acquire foreground access during setup; production activation does not synthesize input. Tests skip with a reason when macOS Accessibility or Screen Recording permission is absent. CI leaves interactive fixtures disabled; Windows status and stdio checks do not establish compatibility with arbitrary applications, fonts, scaling factors, or displays.
 
 ## Release
 

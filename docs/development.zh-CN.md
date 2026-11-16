@@ -47,6 +47,7 @@ pnpm pack:check
 
 - [服务端测试](../internal/server/) 覆盖快照失效、坐标映射、焦点与输入校验、取消、密码省略、OCR、差异及 MCP 契约，涉及桌面交互时使用假后端。[翻译测试](../internal/i18n/i18n_test.go) 检查语言键一致性，[启动器测试](../src/launcher.test.ts) 检查平台选择与缺少平台包的错误。
 - [桌面夹具测试](../internal/desktop/integration_darwin_test.go) 覆盖 macOS 原生输入、窗口身份、文本提取、截图与 OCR。[服务端夹具测试](../internal/server/coordinates_darwin_test.go) 根据实际 JPEG 目标验证缩放、裁剪、窗口移动后的点击，以及浮动面板、连续拖动、取消清理和真实 stdio 截图。
+- [Windows 夹具测试](../internal/desktop/integration_windows_test.go) 使用专用 Edit 和 RichEdit 控件，覆盖 Unicode、多行输入、UIA 值与焦点及原生激活。[截图测试](../internal/desktop/capture_windows_test.go) 无需桌面即可检查 JPEG 尺寸，并在交互夹具中验证 PrintWindow 与屏幕截图的裁剪和缩放。RichEdit 的 UIA 值使用 CR 分隔段落，并包含末尾段落标记，不一定与应用保存文件的换行格式一致。
 
 原生 UI 验收应在交互式会话中使用专用测试窗口，覆盖 Unicode 输入、点击、键盘选择、滚动、拖动、截图、焦点拒绝及失效引用。多种缩放比例与副显示器须分别验证后，才能宣称相应配置已验证。不要在自动化测试中向个人应用发送输入。
 
@@ -56,7 +57,15 @@ macOS 设置上述 cgo 参数后运行：
 COMPUTER_MCP_NATIVE_TEST=1 go test -p 1 -v ./internal/desktop ./internal/server
 ```
 
-原生测试包需串行执行，避免专用窗口争抢焦点。缺少辅助功能或屏幕录制权限时，测试会报告跳过原因。目前原生交互夹具覆盖 macOS；Windows CI 执行原生状态与 stdio 检查，不能据此确认 PrintWindow 渲染或 UIA 交互兼容性。
+Windows 在交互式桌面会话中运行：
+
+```powershell
+$env:COMPUTER_MCP_NATIVE_TEST = "1"
+go test -p 1 -v ./internal/desktop
+Remove-Item Env:COMPUTER_MCP_NATIVE_TEST
+```
+
+原生测试包需串行执行，避免专用窗口争抢焦点，测试期间保持桌面空闲。Windows 夹具在准备阶段可能显式点击已确认属于自身的编辑控件以获取前台焦点；生产环境的激活操作不会合成输入。macOS 缺少辅助功能或屏幕录制权限时，测试会报告跳过原因。CI 不启用交互夹具；Windows 状态与 stdio 检查不能证明任意应用、字体、缩放比例或显示器配置均兼容。
 
 ## 发布
 

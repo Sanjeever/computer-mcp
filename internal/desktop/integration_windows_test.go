@@ -130,6 +130,7 @@ func startWindowsFixture(t *testing.T) (Backend, windowsFixture) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("fixture_dpi=%d", w.GetDpiForWindow(root))
 	if w.GetForegroundWindow() != root {
 		if ok, code := w.SetWindowPos(root, w.HWND_TOPMOST, 0, 0, 0, 0, w.SWP_NOMOVE|w.SWP_NOSIZE|w.SWP_NOACTIVATE); ok == 0 {
 			t.Fatal(code)
