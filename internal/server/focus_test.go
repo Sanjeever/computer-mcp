@@ -41,6 +41,22 @@ func TestKeyboardFocusAndSingleDelivery(t *testing.T) {
 	}
 }
 
+func TestDeniedActivationSendsNoKeyboardInput(t *testing.T) {
+	s, b := setup()
+	ctx := context.Background()
+	if r := observe(ctx, s, ObserveArgs{}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	b.windows[0].Active = false
+	b.windowErr = desktop.Fail("activation_failed", "Windows denied foreground activation; target_window_id=w1; foreground_window_id=w2")
+	r := typeText(ctx, s, TypeArgs{WindowID: "w1", Text: "must not arrive", AutoActivate: true})
+	requireCode(t, r, "activation_failed")
+	_, detail := errorCode(r.err)
+	if b.inputs != 0 || s.snapshot != nil || !strings.Contains(detail, "target_window_id=w1") || !strings.Contains(detail, "foreground_window_id=w2") {
+		t.Fatalf("unsafe or unclear activation failure: inputs=%d snapshot=%v detail=%s", b.inputs, s.snapshot, detail)
+	}
+}
+
 func TestWaitFocusConditions(t *testing.T) {
 	s, b := setup()
 	ctx := context.Background()

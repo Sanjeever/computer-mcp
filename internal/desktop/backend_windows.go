@@ -178,11 +178,14 @@ func (b *winBackend) Window(target Window, action string, r Rect) error {
 		return err
 	}
 	if action == "activate" {
+		if w.GetForegroundWindow() == h {
+			return nil
+		}
 		if w.IsIconic(h) != 0 {
 			w.ShowWindow(h, w.SW_RESTORE)
 		}
-		if w.SetForegroundWindow(h) == 0 {
-			return Fail("native_error", "Windows denied foreground activation")
+		if w.SetForegroundWindow(h) == 0 && w.GetForegroundWindow() != h {
+			return Fail("activation_failed", fmt.Sprintf("Windows denied foreground activation; target_window_id=%s; foreground_window_id=%d", target.ID, w.GetForegroundWindow()))
 		}
 		return nil
 	}

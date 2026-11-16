@@ -64,11 +64,15 @@ On Windows, `computer_type` sends each LF, CRLF, or standalone CR as one Enter k
 
 Observe again after input. A new observation, a wait, window mutation, or input invalidates the previous snapshot; untouched snapshots expire after 60 seconds. This applies across all windows and the desktop: a desktop observation replaces a window snapshot too. After `stale_snapshot`, observe the intended target again and use the new references and screenshot coordinates. Geometry, focus, and element properties are checked before input. These checks cannot make desktop interaction atomic with external changes.
 
+An input attempt consumes its snapshot once it reaches native dispatch, including an uncertain native failure. A request rejected during argument or input-precondition validation does not necessarily consume it. Do not infer snapshot validity from success or failure alone.
+
 For the Dock, taskbar, menus, or an empty desktop, use `computer_observe({"desktop":true})`. This returns a screenshot of the first display without a window or semantic elements. Set `region` to a desktop rectangle from `computer_status` to select another display or capture across displays. Coordinate input from a desktop snapshot checks the display layout instead of window focus. Window listing covers visible, non-minimized application windows.
 
 `computer_wait` accepts an exact `window_id`, optional `text`, and `timeout_ms` (default 5,000, maximum 10,000). It returns `matched:false` when its conditions time out; request cancellation and native errors remain errors. Text matches case-sensitive substrings of accessibility names and non-password values; it does not perform OCR.
 
 Activation waits for confirmed window focus or a non-key panel's mouse-ready state (default 2,000 ms, configurable with `timeout_ms` up to 10,000). A confirmation deadline reports `activation_failed`; an identified modal blocker reports `window_blocked`. Native activation errors are returned directly. `computer_wait` also accepts `active:true`, `focused:true`, and an exact `focus_name`; conditions combine with `text`, and either focus condition requires an active window. Keyboard tools accept `auto_activate:true` and `focus_name` to prepare the target before sending input, sharing a default 2,000 ms preparation budget with the same maximum. For snapshot-based mouse input, activate the target when needed, then observe it before input.
+
+Windows can deny foreground activation. This returns `activation_failed` with the target and current foreground window IDs; activate the target manually, then observe it again. Activation never sends hidden keystrokes or clicks to bypass the restriction. A modal blocker's ID is returned in the `window_blocked` error detail; observe and interact with that window separately.
 
 Window activation does not select a text field. Check the observed `focused` element, especially after opening search or a dialog. `focus_name` is that control's accessibility `name`; omit it for unnamed controls. It waits for focus rather than moving it. A keyboard `focus_timeout` includes the last observed control name, role and focus state, with no input sent.
 

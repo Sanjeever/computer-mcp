@@ -18,8 +18,9 @@ import (
 )
 
 type windowsFixture struct {
-	Window Window
-	Editor w.HWND
+	Window     Window
+	Editor     w.HWND
+	InactiveID string
 }
 
 func TestWindowsFixtureProcess(t *testing.T) {
@@ -66,6 +67,19 @@ func TestWindowsFixtureProcess(t *testing.T) {
 	var rect w.RECT
 	w.GetWindowRect(root, &rect)
 	fixture := windowsFixture{Window: Window{ID: strconv.FormatUint(uint64(root), 10), PID: os.Getpid(), Title: "Computer MCP Windows fixture", Bounds: winRect(rect)}, Editor: editor}
+	if os.Getenv("COMPUTER_MCP_WINDOWS_ACTIVATION_TEST") == "1" && w.GetForegroundWindow() == root {
+		other, code := w.CreateWindowExW(0, w.StrToPwstr("STATIC"), w.StrToPwstr("Computer MCP inactive fixture"), w.WS_OVERLAPPEDWINDOW, 300, 300, 400, 200, 0, 0, 0, nil)
+		if other == 0 {
+			t.Fatal(code)
+		}
+		defer w.DestroyWindow(other)
+		w.ShowWindow(other, w.SW_SHOWNOACTIVATE)
+		fixture.InactiveID = strconv.FormatUint(uint64(other), 10)
+		if ok, code := w.LockSetForegroundWindow(w.LSFW_LOCK); ok == 0 {
+			t.Fatal(code)
+		}
+		defer w.LockSetForegroundWindow(w.LSFW_UNLOCK)
+	}
 	if err := json.NewEncoder(os.Stdout).Encode(fixture); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +131,26 @@ func startWindowsFixture(t *testing.T) (Backend, windowsFixture) {
 		t.Fatal(err)
 	}
 	if w.GetForegroundWindow() != root {
-		t.Skip("Windows denied foreground access to the dedicated fixture; no input sent")
+		if ok, code := w.SetWindowPos(root, w.HWND_TOPMOST, 0, 0, 0, 0, w.SWP_NOMOVE|w.SWP_NOSIZE|w.SWP_NOACTIVATE); ok == 0 {
+			t.Fatal(code)
+		}
+		var rect w.RECT
+		if ok, code := w.GetWindowRect(fixture.Editor, &rect); ok == 0 {
+			t.Fatal(code)
+		}
+		point := winRect(rect).Center()
+		if err := b.CheckPoint(fixture.Window, point); err != nil {
+			t.Fatalf("fixture setup click rejected: %v", err)
+		}
+		// Explicit test setup touches only the verified fixture, never another application.
+		if err := b.Input(ctx, "click", Input{Point: point, Button: "left", Count: 1}); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(time.Second)
+		for w.GetForegroundWindow() != root && time.Now().Before(deadline) {
+			time.Sleep(20 * time.Millisecond)
+		}
+		requireFixtureActive(t, fixture)
 	}
 	if err = b.Window(fixture.Window, "activate", Rect{}); err != nil {
 		t.Fatal(err)
@@ -158,6 +191,44 @@ func TestNativeWindowsRichText(t *testing.T) {
 	testWindowsText(t)
 }
 
+func TestNativeWindowsActivation(t *testing.T) {
+	t.Setenv("COMPUTER_MCP_WINDOWS_ACTIVATION_TEST", "1")
+	b, fixture := startWindowsFixture(t)
+	requireFixtureActive(t, fixture)
+	if err := b.Window(fixture.Window, "activate", Rect{}); err != nil {
+		t.Fatalf("already active target: %v", err)
+	}
+	if fixture.InactiveID == "" {
+		t.Fatal("missing inactive fixture window")
+	}
+	err := b.Window(Window{ID: fixture.InactiveID}, "activate", Rect{})
+	if err != nil {
+		native, ok := err.(*Error)
+		if !ok || native.Code != "activation_failed" || !strings.Contains(native.Detail, "target_window_id="+fixture.InactiveID) || !strings.Contains(native.Detail, "foreground_window_id="+fixture.Window.ID) {
+			t.Fatalf("foreground denial: %v", err)
+		}
+		requireFixtureActive(t, fixture)
+	} else {
+		target, err := hwnd(fixture.InactiveID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(time.Second)
+		for w.GetForegroundWindow() != target && time.Now().Before(deadline) {
+			time.Sleep(20 * time.Millisecond)
+		}
+		if w.GetForegroundWindow() == target {
+			t.Log("Windows permitted activation despite the fixture's foreground lock; native denial was not exercised")
+		} else {
+			requireFixtureActive(t, fixture)
+			t.Log("Windows accepted the native activation request without transferring foreground; the server must confirm activation")
+		}
+	}
+	if got := fixtureText(t, fixture.Editor); got != "" {
+		t.Fatalf("activation sent text: %q", got)
+	}
+}
+
 func testWindowsText(t *testing.T) {
 	b, fixture := startWindowsFixture(t)
 	ctx := context.Background()
@@ -172,7 +243,9 @@ func testWindowsText(t *testing.T) {
 	} {
 		t.Log(test.name)
 		requireFixtureActive(t, fixture)
-		fixtureMessage(t, fixture.Editor, w.WM_SETTEXT, 0, w.LPARAM(uintptr(unsafe.Pointer(w.StrToPwstr("")))))
+		empty := w.StrToPwstr("")
+		fixtureMessage(t, fixture.Editor, w.WM_SETTEXT, 0, w.LPARAM(uintptr(unsafe.Pointer(empty))))
+		runtime.KeepAlive(empty)
 		if err := b.Input(ctx, "type", Input{Text: test.text}); err != nil {
 			t.Fatal(err)
 		}
@@ -187,6 +260,30 @@ func testWindowsText(t *testing.T) {
 		}
 		if got != test.want {
 			t.Errorf("%s text mismatch: got %q, want %q", test.name, got, test.want)
+		}
+		if test.name == "reported_mixed" {
+			wantValue := test.want
+			if os.Getenv("COMPUTER_MCP_WINDOWS_RICHEDIT") == "1" {
+				// RichEdit's UIA value uses CR paragraphs and includes the final paragraph mark.
+				wantValue = strings.ReplaceAll(test.want, "\r\n", "\r") + "\r"
+			}
+			nodes, truncated, err := b.Observe(ctx, fixture.Window, ObserveOptions{Limit: 100, MaxDepth: 64})
+			if err != nil || truncated {
+				t.Fatalf("fixture observation: truncated=%t, %v", truncated, err)
+			}
+			found := false
+			for _, node := range nodes {
+				if node.Value == wantValue {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("typed text missing from UIA values: %+v", nodes)
+			}
+			focus, err := b.Focus(fixture.Window)
+			if err != nil || !focus.Focused {
+				t.Fatalf("fixture focus: %+v, %v", focus, err)
+			}
 		}
 	}
 }

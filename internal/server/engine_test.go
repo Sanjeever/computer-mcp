@@ -18,6 +18,7 @@ type fakeDesktop struct {
 	calls        int
 	err          error
 	inputErr     error
+	windowErr    error
 	displays     []desktop.Display
 	focus        desktop.Element
 	activate     bool
@@ -46,6 +47,9 @@ func (b *fakeDesktop) Resolve(id string) (desktop.Element, error) {
 	return desktop.Element{}, desktop.Fail("stale_snapshot", id)
 }
 func (b *fakeDesktop) Window(w desktop.Window, a string, r desktop.Rect) error {
+	if b.windowErr != nil {
+		return b.windowErr
+	}
 	if b.activate && a == "activate" {
 		for i := range b.windows {
 			b.windows[i].Active = b.windows[i].ID == w.ID
@@ -211,6 +215,43 @@ func TestInputFailureIsNotRetried(t *testing.T) {
 	requireCode(t, click(ctx, s, ClickArgs{SnapshotID: id, ElementID: "0"}), "native_error")
 	if b.inputs != 1 || s.snapshot != nil {
 		t.Fatal("input retried or snapshot retained after uncertain failure")
+	}
+}
+
+func TestRejectedClickPreservesSnapshot(t *testing.T) {
+	for _, rejection := range []string{"arguments", "occlusion", "focus"} {
+		t.Run(rejection, func(t *testing.T) {
+			s, b := setup()
+			ctx := context.Background()
+			if r := observe(ctx, s, ObserveArgs{}); r.err != nil {
+				t.Fatal(r.err)
+			}
+			snapshot := s.snapshot
+			args := ClickArgs{SnapshotID: snapshot.ID, ElementID: "0"}
+			wantCode := "invalid_argument"
+			switch rejection {
+			case "arguments":
+				args.ElementID = ""
+			case "occlusion":
+				b.pointErr = desktop.Fail("target_obscured", "fixture cover")
+				wantCode = "target_obscured"
+			case "focus":
+				b.windows[0].Active = false
+				wantCode = "not_active"
+			}
+			requireCode(t, click(ctx, s, args), wantCode)
+			if s.snapshot != snapshot || b.inputs != 0 {
+				t.Fatal("rejection consumed the snapshot or dispatched input")
+			}
+			b.pointErr = nil
+			b.windows[0].Active = true
+			if r := click(ctx, s, ClickArgs{SnapshotID: snapshot.ID, ElementID: "0"}); r.err != nil {
+				t.Fatal(r.err)
+			}
+			if s.snapshot != nil || b.inputs != 1 {
+				t.Fatal("validated click did not consume the snapshot exactly once")
+			}
+		})
 	}
 }
 
