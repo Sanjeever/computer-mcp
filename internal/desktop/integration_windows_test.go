@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -105,7 +104,7 @@ func TestWindowsFixtureProcess(t *testing.T) {
 	}
 	var rect w.RECT
 	w.GetWindowRect(root, &rect)
-	fixture := windowsFixture{Window: Window{ID: strconv.FormatUint(uint64(root), 10), PID: os.Getpid(), Title: "Computer MCP Windows fixture", Bounds: winRect(rect)}, Editor: editor, Canvas: canvas}
+	fixture := windowsFixture{Window: Window{ID: windowID(root), PID: os.Getpid(), Title: "Computer MCP Windows fixture", Bounds: winRect(rect)}, Editor: editor, Canvas: canvas}
 	if os.Getenv("COMPUTER_MCP_WINDOWS_ACTIVATION_TEST") == "1" && w.GetForegroundWindow() == root {
 		other, code := w.CreateWindowExW(0, w.StrToPwstr("STATIC"), w.StrToPwstr("Computer MCP inactive fixture"), w.WS_OVERLAPPEDWINDOW, 300, 300, 400, 200, 0, 0, 0, nil)
 		if other == 0 {
@@ -113,7 +112,7 @@ func TestWindowsFixtureProcess(t *testing.T) {
 		}
 		defer w.DestroyWindow(other)
 		w.ShowWindow(other, w.SW_SHOWNOACTIVATE)
-		fixture.InactiveID = strconv.FormatUint(uint64(other), 10)
+		fixture.InactiveID = windowID(other)
 		if ok, code := w.LockSetForegroundWindow(w.LSFW_LOCK); ok == 0 {
 			t.Fatal(code)
 		}

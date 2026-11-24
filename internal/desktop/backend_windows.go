@@ -10,6 +10,7 @@ import (
 	"math"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -98,15 +99,41 @@ func (b *winBackend) Status() (Status, error) {
 	return s, nil
 }
 func hwnd(id string) (w.HWND, error) {
-	n, err := strconv.ParseUint(id, 10, 64)
-	if err != nil || n == 0 {
+	handle, _, _ := strings.Cut(id, ":")
+	n, err := strconv.ParseUint(handle, 10, 64)
+	if err != nil || n == 0 || windowID(w.HWND(n)) != id {
 		return 0, Fail("window_not_found", id)
 	}
-	h := w.HWND(n)
-	if w.IsWindow(h) == 0 {
-		return 0, Fail("window_not_found", id)
+	return w.HWND(n), nil
+}
+
+func identifyWindow(h w.HWND) (id string, pid uint32, process w.HANDLE) {
+	thread := w.GetWindowThreadProcessId(h, &pid)
+	if thread == 0 {
+		return "", 0, 0
 	}
-	return h, nil
+	process, _ = w.OpenProcess(w.PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)
+	if process == 0 {
+		return "", 0, 0
+	}
+	var born, exit, kernel, user w.FILETIME
+	ok, _ := w.GetProcessTimes(process, &born, &exit, &kernel, &user)
+	var currentPID uint32
+	if ok == 0 || w.GetWindowThreadProcessId(h, &currentPID) != thread || currentPID != pid {
+		w.CloseHandle(process)
+		return "", 0, 0
+	}
+	// A handle alone can be reused after a window closes. Include its GUI thread
+	// and process lifetime to avoid resolving an old reference in a new process.
+	return fmt.Sprintf("%d:%d:%d:%d", h, pid, thread, uint64(born.DwHighDateTime)<<32|uint64(born.DwLowDateTime)), pid, process
+}
+
+func windowID(h w.HWND) string {
+	id, _, process := identifyWindow(h)
+	if process != 0 {
+		w.CloseHandle(process)
+	}
+	return id
 }
 func winRect(r w.RECT) Rect {
 	return Rect{float64(r.Left), float64(r.Top), float64(r.Right - r.Left), float64(r.Bottom - r.Top)}
@@ -135,25 +162,31 @@ var windowCallback = syscall.NewCallback(func(handle uintptr, _ uintptr) uintptr
 	if n == 0 {
 		return 1
 	}
-	var pid uint32
-	w.GetWindowThreadProcessId(h, &pid)
-	app := ""
-	process, _ := w.OpenProcess(w.PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)
-	if process != 0 {
-		path := make([]uint16, 32768)
-		size := uint32(len(path))
-		if ok, _ := w.QueryFullProcessImageNameW(process, 0, &path[0], &size); ok != 0 {
-			app = filepath.Base(syscall.UTF16ToString(path[:size]))
-		}
-		w.CloseHandle(process)
+	id, pid, process := identifyWindow(h)
+	if id == "" {
+		return 1
 	}
-	result.windows = append(result.windows, Window{ID: strconv.FormatUint(uint64(handle), 10), PID: int(pid), App: app, Title: syscall.UTF16ToString(buf[:n]), Bounds: winRect(r), Active: h == result.active})
+	defer w.CloseHandle(process)
+	app := ""
+	path := make([]uint16, 32768)
+	size := uint32(len(path))
+	if ok, _ := w.QueryFullProcessImageNameW(process, 0, &path[0], &size); ok != 0 {
+		app = filepath.Base(syscall.UTF16ToString(path[:size]))
+	}
+	window := Window{ID: id, PID: int(pid), App: app, Title: syscall.UTF16ToString(buf[:n]), Bounds: winRect(r), Active: h == result.active}
+	if owner, _ := w.GetWindow(h, w.GW_OWNER); owner != 0 {
+		var ownerPID uint32
+		if w.GetWindowThreadProcessId(owner, &ownerPID) != 0 && ownerPID == pid {
+			window.OwnerID = windowID(owner)
+		}
+	}
 	if w.IsWindowEnabled(h) == 0 {
 		popup := w.GetLastActivePopup(h)
 		if popup != 0 && popup != h {
-			result.windows[len(result.windows)-1].BlockedBy = strconv.FormatUint(uint64(popup), 10)
+			window.BlockedBy = windowID(popup)
 		}
 	}
+	result.windows = append(result.windows, window)
 	if len(result.windows) >= 512 {
 		return 0
 	}
@@ -185,7 +218,7 @@ func (b *winBackend) Window(target Window, action string, r Rect) error {
 			w.ShowWindow(h, w.SW_RESTORE)
 		}
 		if w.SetForegroundWindow(h) == 0 && w.GetForegroundWindow() != h {
-			return Fail("activation_failed", fmt.Sprintf("Windows denied foreground activation; target_window_id=%s; foreground_window_id=%d", target.ID, w.GetForegroundWindow()))
+			return Fail("activation_failed", fmt.Sprintf("Windows denied foreground activation; target_window_id=%s; foreground_window_id=%s", target.ID, windowID(w.GetForegroundWindow())))
 		}
 		return nil
 	}

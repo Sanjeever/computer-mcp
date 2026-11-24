@@ -69,6 +69,7 @@ type Window struct {
 	Active      bool   `json:"active"`
 	MouseActive bool   `json:"mouse_active,omitempty"`
 	BlockedBy   string `json:"blocked_by,omitempty"`
+	OwnerID     string `json:"-"`
 }
 type Element struct {
 	ID       string `json:"element_id"`

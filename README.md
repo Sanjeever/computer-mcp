@@ -51,7 +51,7 @@ On Windows, run in the target user's interactive session. UIPI can prevent input
 
 Start with `computer_window({"action":"list"})`, activate an exact `window_id`, then observe it. Screenshot coordinates use the returned image, with `(0, 0)` at its top left. `region` and window bounds use desktop coordinates: logical points on macOS, DPI-aware pixels on Windows. The server converts between these spaces.
 
-Window operations also accept `by_app` (case-insensitive exact application name or `app_id`) and `by_title` (case-insensitive title substring). Combine the filters to narrow a list; activate/move reject multiple matches with `ambiguous_window`. Filters cannot combine with `window_id`. Window IDs follow native identity, so a title change alone does not change the ID.
+Window operations also accept `by_app` (case-insensitive exact application name or `app_id`) and `by_title` (case-insensitive title substring). Combine the filters to narrow a list; activate/move reject multiple matches with `ambiguous_window`. Filters cannot combine with `window_id`. Window IDs are opaque references to native identity. A title change alone does not change the ID.
 
 macOS floating tool panels are listed as separate windows. Observe and interact with their own `window_id` and image. A non-key panel may report `mouse_active:true` while `active:false` when its application is frontmost. Activation can confirm this mouse-ready state without giving the panel keyboard focus; keyboard input still requires `active:true`.
 

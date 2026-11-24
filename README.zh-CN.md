@@ -51,7 +51,7 @@ Windows 应运行在目标用户的交互式会话中。UIPI 可能阻止向管�
 
 先调用 `computer_window({"action":"list"})`，激活精确 `window_id`，再观察窗口。截图坐标相对于返回图片，左上角为 `(0, 0)`。`region` 和窗口边界使用桌面坐标，macOS 为逻辑点，Windows 为 DPI 感知像素，由服务完成转换。
 
-窗口操作也支持 `by_app`（应用名称或 `app_id`，忽略大小写精确匹配）和 `by_title`（忽略大小写的标题子串）。可组合筛选列表；activate/move 遇到多个匹配返回 `ambiguous_window`。筛选不能与 `window_id` 同用。窗口 ID 跟随原生身份，单纯修改标题不会改变 ID。
+窗口操作也支持 `by_app`（应用名称或 `app_id`，忽略大小写精确匹配）和 `by_title`（忽略大小写的标题子串）。可组合筛选列表；activate/move 遇到多个匹配返回 `ambiguous_window`。筛选不能与 `window_id` 同用。窗口 ID 是原生窗口身份的不透明引用。单纯修改标题不会改变 ID。
 
 macOS 浮动工具面板作为独立窗口列出。应按面板自身的 `window_id` 和截图观察和操作。应用处于前台时，非键盘焦点面板可返回 `mouse_active:true`、`active:false`。激活操作可确认这一可接收鼠标的状态，无须让面板取得键盘焦点；键盘输入仍要求 `active:true`。
 
