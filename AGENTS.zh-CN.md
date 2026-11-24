@@ -1,19 +1,19 @@
 # Computer MCP
 
-[English](AGENTS.md) 是主要约定。用户契约见 [README.zh-CN.md](README.zh-CN.md)，构建与发布见[开发文档](docs/development.zh-CN.md)。文档以英文为主，用户可见变化同步维护简体中文版本。提交使用英文 Conventional Commits，许可证为 MIT。
+[English](AGENTS.md) 是主要约定。用户契约见 [README.zh-CN.md](README.zh-CN.md)，构建、验证与发布见[开发文档](docs/development.zh-CN.md)。文档以英文为主。提交使用英文 Conventional Commits。
 
 ## 架构
 
 - Go 负责 stdio MCP、工具契约、桌面状态、有界执行和原生适配，使用官方 Go MCP SDK。
-- TypeScript 负责 npm 启动器与打包脚本，编译为 JavaScript 后继承 stdio，直接启动平台二进制，不使用 Shell。使用 pnpm、TypeScript、Oxlint、Oxfmt，TypeScript 单元测试使用 Vitest。
-- 发布平台和架构以 [README](README.zh-CN.md) 为准。原生构建在对应 OS 和架构上执行；macOS 使用 cgo 和 Apple SDK。
+- TypeScript 负责 npm 启动器和打包脚本。编译后的启动器继承 stdio，直接启动原生程序。工具链和目标构建环境见[开发指南](docs/development.zh-CN.md)。
+- 按 [README](README.zh-CN.md) 列明的 OS 和架构发布。
 - 原生访问集中在 `internal/desktop`。macOS 使用薄 Objective-C 桥接，Windows 使用生成的 Win32/UIA 绑定。后端调用和 COM 对象生命周期固定在引擎的 OS 线程。
 - 沿用后端边界，新增插件注册机制、服务、网络传输或语言须有具体需求。
 
 ## 行为契约
 
 - stdout 专用于 MCP，诊断写 stderr。默认不记录输入文本、截图或完整桌面快照。
-- 工具名、字段、ID 和错误码不随语言变化，字段采用 snake_case。工具描述和应用错误从 `internal/i18n` 加载，支持 `en`、`zh-CN`，默认英文。原生诊断可保留系统原文。
+- 工具名、字段和错误码使用 snake_case，同不透明 ID 一样不随语言变化。工具描述和应用错误放在 `internal/i18n`。
 - 观察必须有预算并报告截断。元素引用属于最新快照，过期后不可使用；输入消耗可操作快照。窗口鼠标输入核对几何位置及激活或可接收鼠标状态，元素点击还须复核原生身份与属性。桌面快照核对显示器布局，支持系统 UI 交互。键盘输入要求窗口已激活。
 - 图片坐标相对于裁剪和缩放后的返回图片，在统一位置转换。保留负数桌面坐标与多 DPI 语义。
 - 输入串行执行，通过用户级进程间锁协调。结果不确定时不重试。取消不能撤销已发送输入，合成按键和鼠标按钮必须释放。
@@ -23,9 +23,9 @@
 
 ## 文档同步
 
-- 修改接口或行为时，对照代码与测试检查受影响的 README、`internal/i18n` 工具描述、注释和示例。中英文含义保持一致，翻译键保持一致，保留原生诊断细节。
-- 用户契约放在 README，构建、测试与发布流程放在 `docs/development.md`，贡献约束放在本文。版本、包名、支持平台和 CI 命令等易变事实，通过链接引用所属文档或配置。
-- 保留架构决定的前提与取舍，注释解释原因，删除复述调用过程的文字。实现与既有需求冲突时保留证据，重大分歧先确认，再修改文档契约。
+- 改动工具 schema、默认值、输出、错误或行为时，在同一改动中对照代码与测试检查受影响的 README、开发指南、`internal/i18n` 描述、注释和示例。保持中英文含义与翻译键一致，保留原生诊断细节。
+- 用户契约放在 README，贡献约束放在本文，流程和设计理由放在[开发指南](docs/development.zh-CN.md)。版本、包名、支持平台与 CI 命令通过链接引用所属文档或配置。
+- 文档与注释保留设计理由。实现与既有需求冲突时，记录代码或测试证据，重大分歧先确认，再修改契约。
 
 ## 验证与发布
 

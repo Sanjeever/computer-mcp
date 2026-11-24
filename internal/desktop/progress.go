@@ -4,8 +4,8 @@ import "context"
 
 type progressKey struct{}
 
-// WithStageReporter lets native operations report progress while they still
-// occupy the locked desktop worker.
+// WithStageReporter lets callers diagnose deadlines while a native provider
+// still occupies the worker.
 func WithStageReporter(ctx context.Context, report func(string)) context.Context {
 	return context.WithValue(ctx, progressKey{}, report)
 }

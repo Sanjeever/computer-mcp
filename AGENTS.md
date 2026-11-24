@@ -2,20 +2,20 @@
 
 [简体中文](AGENTS.zh-CN.md)
 
-Read [README.md](README.md) for the user contract and [docs/development.md](docs/development.md) for build, verification, and release procedures. English is the primary documentation language; maintain the corresponding Simplified Chinese files for user-facing changes. Use English Conventional Commits. The project is MIT licensed.
+Read [README.md](README.md) for the user contract and [docs/development.md](docs/development.md) for build, verification, and release procedures. English is the primary documentation language. Use English Conventional Commits.
 
 ## Architecture
 
 - Go owns the stdio MCP server, tool contracts, desktop state, bounded execution, and native adapters. Use the official MCP Go SDK.
-- TypeScript owns the npm launcher and packaging scripts. Build the launcher to JavaScript; it inherits stdio and launches the platform binary without a shell. Use pnpm, TypeScript, Oxlint, Oxfmt, and Vitest for TypeScript tests.
-- Publish only the OS/architecture combinations in [README.md](README.md). Keep native builds on the corresponding OS and architecture; macOS uses cgo and Apple SDKs.
+- TypeScript owns the npm launcher and packaging scripts. The compiled launcher inherits stdio and starts the native binary directly. Use the toolchain and target build environments in the [development guide](docs/development.md).
+- Publish only the OS and architecture combinations in the [README](README.md).
 - Native access is confined to `internal/desktop`. macOS uses a thin Objective-C bridge; Windows uses generated Win32/UIA bindings. Keep all backend calls and COM object lifetimes on the engine's locked OS thread.
 - Use the existing backend boundary. Do not introduce plugin registries, services, network transports, or additional languages without a concrete requirement.
 
 ## Behavioral contracts
 
 - stdout is exclusively the MCP transport; diagnostic output belongs on stderr. Never log typed text, screenshots, or whole desktop snapshots by default.
-- Tool names, keys, IDs, and error codes remain language independent and use snake_case. Tool descriptions and application error messages come from `internal/i18n`; support `en` and `zh-CN`, defaulting to English. Native diagnostics may retain OS wording.
+- Use snake_case for tool names, fields, and error codes. Keep these and opaque IDs language independent. Keep tool descriptions and application errors in `internal/i18n`.
 - Observations are bounded. Report truncation. Element references belong to the latest snapshot and expire; input consumes the actionable snapshot. Window mouse input validates geometry and active/mouse-ready state; element clicks also revalidate native identity and properties. Desktop snapshots validate display layout and allow system UI interaction. Keyboard input requires an active window.
 - Image coordinates refer to the returned image, including crop and resize. Convert centrally. Preserve negative desktop coordinates and mixed-DPI behavior.
 - Input is serialized and guarded by a per-user cross-process lock. Never retry an uncertain input operation. Cancellation cannot undo delivered input. Always release synthetic held keys/buttons.
@@ -25,9 +25,9 @@ Read [README.md](README.md) for the user contract and [docs/development.md](docs
 
 ## Documentation sync
 
-- When changing interfaces or behavior, check affected README sections, `internal/i18n` tool descriptions, comments, and examples against code and tests. Keep English and Simplified Chinese versions equivalent and catalog keys in parity; preserve native diagnostic details.
-- Keep user contracts in README, build/test/release procedures in `docs/development.md`, and contributor constraints here. Link to the owning document or configuration for mutable facts such as versions, package names, supported platforms, and CI commands.
-- Preserve the premises and tradeoffs behind architecture decisions. Explain why in comments; remove prose that merely repeats call sequences. If implementation conflicts with an established requirement, retain evidence and confirm significant discrepancies before changing the documented contract.
+- In the same change as a schema, default, output, error, or behavior update, check the affected README, development guide, `internal/i18n` descriptions, comments, and examples against code and tests. Keep both languages equivalent and catalog keys in parity. Preserve native diagnostic details.
+- Keep the user contract in README, contributor rules here, and procedures and design rationale in the [development guide](docs/development.md). Link to those sources or to configuration for versions, package names, platform support, and CI commands.
+- Keep the reasons behind design decisions in docs and comments. When implementation conflicts with an established requirement, record the code or test evidence and confirm significant discrepancies before changing the contract.
 
 ## Verification and release
 

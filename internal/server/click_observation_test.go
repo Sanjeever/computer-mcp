@@ -145,7 +145,7 @@ func TestClickObservationFailurePreservesDelivery(t *testing.T) {
 			}
 			old := s.snapshot
 			changeForeground := func() {
-				// A different window of the same process is outside the click's scope.
+				// Keep the PID to verify that process identity alone is insufficient.
 				b.windows[0].ID = "unrelated"
 			}
 			wantCode := "not_active"
