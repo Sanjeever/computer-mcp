@@ -117,5 +117,5 @@ func mouseObservationWindow(b desktop.Backend, source desktop.Window) (desktop.W
 	if same.ID != "" {
 		return same, nil
 	}
-	return desktop.Window{}, desktop.Fail("not_active", "input target or its owned window is no longer active")
+	return desktop.Window{}, desktop.Fail("not_active", windowFocusDetail(source.ID, windows))
 }

@@ -34,7 +34,7 @@
   "permission_denied": "缺少桌面权限，请在系统设置中启用辅助功能；截图还需要屏幕录制权限。",
   "stale_snapshot": "快照或目标已过期、被替换或已消耗。请重新观察预期窗口或桌面，使用新返回的 snapshot_id、元素 ID 和图片坐标。",
   "window_not_found": "目标窗口已不存在。",
-  "not_active": "发送输入前请先激活目标窗口。",
+  "not_active": "目标窗口未激活。发送输入前，请核对目标窗口和当前激活窗口的 ID。",
   "invalid_argument": "工具参数无效。",
   "native_error": "操作系统调用失败。",
   "busy": "另一个请求或服务实例正在使用桌面。",

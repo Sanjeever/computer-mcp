@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,6 +164,12 @@ func TestClickObservationFailurePreservesDelivery(t *testing.T) {
 				t.Fatalf("failed observation: %+v, %v", r.value, r.err)
 			}
 			requireCode(t, response{err: result.err}, wantCode)
+			if wantCode == "not_active" {
+				_, detail := errorCode(result.err)
+				if !strings.Contains(detail, "target_window_id="+old.Window.ID) || !strings.Contains(detail, "active_window_id=unrelated") {
+					t.Fatalf("follow-up focus diagnostic: %s", detail)
+				}
+			}
 			if b.inputs != 1 || s.snapshot != nil || s.previous != old {
 				t.Fatalf("failure changed delivery or observation state: inputs=%d current=%+v previous=%+v", b.inputs, s.snapshot, s.previous)
 			}

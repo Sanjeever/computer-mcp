@@ -78,7 +78,7 @@ func TestFocusTimeoutReportsActualControl(t *testing.T) {
 	r := typeText(context.Background(), s, TypeArgs{WindowID: "w1", Text: "hello", FocusName: "Document", Timeout: 1})
 	requireCode(t, r, "focus_timeout")
 	_, detail := errorCode(r.err)
-	for _, want := range []string{`expected_name="Document"`, `actual_name="Find"`, `actual_role="AXTextField"`, "focused=true"} {
+	for _, want := range []string{"target_window_id=w1", `expected_name="Document"`, `actual_name="Find"`, `actual_role="AXTextField"`, "focused=true"} {
 		if !strings.Contains(detail, want) {
 			t.Fatalf("focus diagnostic missing %s: %s", want, detail)
 		}
@@ -92,11 +92,16 @@ func TestNonKeyPanelAcceptsMouseButRejectsKeyboard(t *testing.T) {
 	s, b := setup()
 	b.windows[0].Active = false
 	b.windows[0].MouseActive = true
+	b.windows = append(b.windows, desktop.Window{ID: "key-window", PID: b.windows[0].PID, Active: true})
 	ctx := context.Background()
 	if r := window(ctx, s, WindowArgs{Action: "activate", WindowID: "w1"}); r.err != nil {
 		t.Fatal(r.err)
 	}
-	requireCode(t, key(ctx, s, KeyArgs{WindowID: "w1", Keys: []string{"space"}}), "not_active")
+	r := key(ctx, s, KeyArgs{WindowID: "w1", Keys: []string{"space"}})
+	requireCode(t, r, "not_active")
+	if _, detail := errorCode(r.err); detail != "target_window_id=w1; active_window_id=key-window" || b.inputs != 0 {
+		t.Fatalf("non-key panel diagnostic: %s, inputs=%d", detail, b.inputs)
+	}
 	if r := observe(ctx, s, ObserveArgs{WindowID: "w1", Screenshot: true}); r.err != nil {
 		t.Fatal(r.err)
 	}

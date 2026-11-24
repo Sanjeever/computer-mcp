@@ -183,13 +183,7 @@ func findWindow(b desktop.Backend, id string, active bool) (desktop.Window, erro
 				return w, desktop.Fail("window_blocked", w.BlockedBy)
 			}
 			if active && !w.Active {
-				detail := "target=" + id
-				for _, current := range windows {
-					if current.Active {
-						detail += fmt.Sprintf("; active=%s (%s, %s)", current.ID, current.App, current.Title)
-					}
-				}
-				return w, desktop.Fail("not_active", detail)
+				return w, desktop.Fail("not_active", windowFocusDetail(id, windows))
 			}
 			return w, nil
 		}

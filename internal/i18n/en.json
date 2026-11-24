@@ -34,7 +34,7 @@
   "permission_denied": "Desktop permission is missing. Enable Accessibility and, for screenshots, Screen Recording in system settings.",
   "stale_snapshot": "The snapshot or target expired, was replaced or was consumed. Observe the intended window or desktop again; use its new snapshot_id, element IDs and image coordinates.",
   "window_not_found": "The requested window no longer exists.",
-  "not_active": "Activate the target window before sending input.",
+  "not_active": "The target window is not active. Check the target and current active window IDs before sending input.",
   "invalid_argument": "Invalid tool arguments.",
   "native_error": "The operating system operation failed.",
   "busy": "The desktop is being used by another request or server instance.",

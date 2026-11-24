@@ -65,7 +65,7 @@ func prepareKeyboard(ctx context.Context, s *state, id string, auto bool, focusN
 		w, err = activateWindow(ctx, s.backend, w, timeout)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil {
-				return desktop.Fail("activation_failed", "target="+id+"; no input sent")
+				return desktop.Fail("activation_failed", "target_window_id="+id+"; no input sent")
 			}
 			return err
 		}
@@ -90,8 +90,17 @@ func prepareKeyboard(ctx context.Context, s *state, id string, auto bool, focusN
 			if parent.Err() != nil {
 				return parent.Err()
 			}
-			return desktop.Fail("focus_timeout", fmt.Sprintf("expected_name=%q; actual_name=%q; actual_role=%q; focused=%t", focusName, focused.Name, focused.Role, focused.Focused))
+			return desktop.Fail("focus_timeout", fmt.Sprintf("target_window_id=%s; expected_name=%q; actual_name=%q; actual_role=%q; focused=%t", id, focusName, clip(focused.Name, 512), focused.Role, focused.Focused))
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+func windowFocusDetail(target string, windows []desktop.Window) string {
+	for _, w := range windows {
+		if w.Active {
+			return "target_window_id=" + target + "; active_window_id=" + w.ID
+		}
+	}
+	return "target_window_id=" + target + "; active_window_id=none"
 }
