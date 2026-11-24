@@ -133,8 +133,13 @@ func TestNativeImageCoordinates(t *testing.T) {
 				t.Fatalf("click marker missing from image: %v", marker)
 			}
 			point := desktop.Point{X: float64(marker.Min.X+marker.Max.X) / 2, Y: float64(marker.Min.Y+marker.Max.Y) / 2}
-			if r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, Point: &point}); r.err != nil {
-				t.Fatal(r.err)
+			source := s.snapshot
+			r = click(ctx, s, ClickArgs{SnapshotID: source.ID, Point: &point, ObserveAfter: &ClickObservation{Screenshot: true}})
+			next := requireClickObservation(t, r)
+			nextImage, err := jpeg.DecodeConfig(bytes.NewReader(r.image))
+			if err != nil || next.ID == source.ID || next.Window.ID != target.ID || next.Region != source.Region ||
+				nextImage.Width != img.Bounds().Dx() || nextImage.Height != img.Bounds().Dy() {
+				t.Fatalf("follow-up observation: snapshot=%+v image=%+v err=%v", next, nextImage, err)
 			}
 			r = wait(ctx, s, WaitArgs{WindowID: target.ID, Text: "image clicked", Timeout: 2000})
 			if r.err != nil || r.value.(map[string]any)["matched"] != true {

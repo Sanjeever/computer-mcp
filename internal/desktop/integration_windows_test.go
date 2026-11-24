@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -15,8 +16,11 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	w "github.com/zzl/go-win32api/v2/win32"
 )
+
+const fixtureDialogTitle = "Computer MCP owned fixture dialog"
 
 type windowsFixture struct {
 	Window     Window
@@ -46,7 +50,12 @@ func TestWindowsFixtureProcess(t *testing.T) {
 		t.Fatal(code)
 	}
 	defer w.DestroyWindow(root)
-	editor, code := w.CreateWindowExW(w.WS_EX_CLIENTEDGE, w.StrToPwstr(editorClass), w.StrToPwstr(""), w.WS_CHILD|w.WS_VISIBLE|w.WS_VSCROLL|w.WINDOW_STYLE(w.ES_MULTILINE|w.ES_AUTOVSCROLL|w.ES_WANTRETURN), 12, 12, 1100, 500, root, 0, 0, nil)
+	dialogTest := os.Getenv("COMPUTER_MCP_WINDOWS_DIALOG_TEST") == "1"
+	editorTop, editorHeight := int32(12), int32(500)
+	if dialogTest {
+		editorTop, editorHeight = 72, 440
+	}
+	editor, code := w.CreateWindowExW(w.WS_EX_CLIENTEDGE, w.StrToPwstr(editorClass), w.StrToPwstr(""), w.WS_CHILD|w.WS_VISIBLE|w.WS_VSCROLL|w.WINDOW_STYLE(w.ES_MULTILINE|w.ES_AUTOVSCROLL|w.ES_WANTRETURN), 12, editorTop, 1100, editorHeight, root, 0, 0, nil)
 	if editor == 0 {
 		t.Fatal(code)
 	}
@@ -54,10 +63,21 @@ func TestWindowsFixtureProcess(t *testing.T) {
 	if canvas == 0 {
 		t.Fatal(code)
 	}
+	var openDialog w.HWND
+	if dialogTest {
+		openDialog, code = w.CreateWindowExW(0, w.StrToPwstr("BUTTON"), w.StrToPwstr("Open fixture dialog"), w.WS_CHILD|w.WS_VISIBLE|w.WS_TABSTOP, 20, 20, 160, 36, root, 0, 0, nil)
+		if openDialog == 0 {
+			t.Fatal(code)
+		}
+	}
 	var mouseEvents []string
 	for _, target := range []w.HWND{canvas, root, editor} {
 		var original uintptr
 		procedure := syscall.NewCallback(func(h w.HWND, message uint32, param w.WPARAM, data w.LPARAM) w.LRESULT {
+			if openDialog != 0 && h == root && message == w.WM_COMMAND && w.HWND(data) == openDialog && uint32(param)>>16 == w.BN_CLICKED {
+				w.MessageBoxW(root, w.StrToPwstr("Close this fixture dialog to return to the main window."), w.StrToPwstr(fixtureDialogTitle), w.MB_OK)
+				return 0
+			}
 			if h == canvas && message == w.WM_APP {
 				mouseEvents = nil
 				w.SetWindowTextW(canvas, w.StrToPwstr(""))
@@ -265,6 +285,100 @@ func TestNativeWindowsActivation(t *testing.T) {
 	}
 	if got := fixtureText(t, fixture.Editor); got != "" {
 		t.Fatalf("activation sent text: %q", got)
+	}
+}
+
+func TestNativeWindowsClickObservation(t *testing.T) {
+	if os.Getenv("COMPUTER_MCP_NATIVE_TEST") != "1" {
+		t.Skip("set COMPUTER_MCP_NATIVE_TEST=1 in an interactive desktop session")
+	}
+	t.Setenv("COMPUTER_MCP_WINDOWS_DIALOG_TEST", "1")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	binary := filepath.Join(t.TempDir(), "computer-mcp.exe")
+	if output, err := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/computer-mcp").CombinedOutput(); err != nil {
+		t.Fatalf("build computer-mcp: %v\n%s", err, output)
+	}
+	_, fixture := startWindowsFixture(t)
+	client := mcp.NewClient(&mcp.Implementation{Name: "windows-click-fixture", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: exec.CommandContext(ctx, binary)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	call := func(name string, args map[string]any, result any) {
+		t.Helper()
+		r, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := r.Content[0].(*mcp.TextContent).Text
+		if r.IsError {
+			t.Fatalf("%s: %s", name, text)
+		}
+		if err := json.Unmarshal([]byte(text), result); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type observation struct {
+		SnapshotID string    `json:"snapshot_id"`
+		Window     Window    `json:"window"`
+		Elements   []Element `json:"elements"`
+	}
+	clickAfter := func(s observation, elementID string) observation {
+		t.Helper()
+		var result struct {
+			InputDelivered   bool            `json:"input_delivered"`
+			Observation      observation     `json:"observation"`
+			ObservationError json.RawMessage `json:"observation_error"`
+		}
+		call("computer_click", map[string]any{"snapshot_id": s.SnapshotID, "element_id": elementID, "observe_after": map[string]any{}}, &result)
+		if !result.InputDelivered || result.Observation.SnapshotID == "" || result.Observation.SnapshotID == s.SnapshotID {
+			t.Fatalf("click did not return a new observation: %s", result.ObservationError)
+		}
+		return result.Observation
+	}
+
+	requireFixtureActive(t, fixture)
+	var main observation
+	call("computer_observe", map[string]any{"window_id": fixture.Window.ID}, &main)
+	var openID string
+	for _, el := range main.Elements {
+		if el.Name == "Open fixture dialog" && el.Enabled {
+			openID = el.ID
+			break
+		}
+	}
+	if openID == "" {
+		t.Fatal("fixture open button missing from observation")
+	}
+	dialog := clickAfter(main, openID)
+	if dialog.Window.Title != fixtureDialogTitle || dialog.Window.PID != fixture.Window.PID || dialog.Window.ID == main.Window.ID {
+		t.Fatalf("expected owned dialog, got %+v", dialog.Window)
+	}
+	dialogHandle, err := hwnd(dialog.Window.ID)
+	if err != nil || dialogHandle != w.GetForegroundWindow() {
+		t.Fatal("fixture dialog is not in the foreground")
+	}
+	button, _ := w.GetDlgItem(dialogHandle, int32(w.IDOK))
+	var buttonBounds w.RECT
+	if ok, code := w.GetWindowRect(button, &buttonBounds); ok == 0 {
+		t.Fatalf("resolve fixture dialog button: %v", code)
+	}
+	var closeID string
+	for _, el := range dialog.Elements {
+		if el.Enabled && el.Bounds == winRect(buttonBounds) {
+			closeID = el.ID
+			break
+		}
+	}
+	if closeID == "" {
+		t.Fatal("fixture close button missing from observation")
+	}
+	returned := clickAfter(dialog, closeID)
+	if returned.Window.ID != main.Window.ID || !returned.Window.Active {
+		t.Fatalf("expected main window after closing the dialog, got %+v", returned.Window)
 	}
 }
 
