@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sanjeever/computer-mcp/internal/desktop"
 	"github.com/Sanjeever/computer-mcp/internal/i18n"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -84,6 +85,8 @@ func TestProtocolAndLanguages(t *testing.T) {
 					args["hold_keys"] = []string{"ctrl"}
 					if name == "computer_scroll" {
 						args["delta_y"] = 1
+					} else {
+						args["observe_after"] = map[string]any{"screenshot": true}
 					}
 				}
 				result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
@@ -117,5 +120,62 @@ func TestProtocolAndLanguages(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClickObservationProtocol(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, b := setupClickDesktop()
+	e := newEngine(ctx, func() (desktop.Backend, error) { return b, nil })
+	defer e.Close()
+	catalog, _ := i18n.Load("zh-CN")
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := New("test", catalog, e).Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	call := func(name string, args map[string]any) *mcp.CallToolResult {
+		t.Helper()
+		r, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil || r.IsError {
+			t.Fatalf("%s: %+v, %v", name, r, err)
+		}
+		return r
+	}
+	var snap Snapshot
+	r := call("computer_observe", nil)
+	if err := json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &snap); err != nil {
+		t.Fatal(err)
+	}
+	args := map[string]any{"snapshot_id": snap.ID, "element_id": "0", "observe_after": map[string]any{"screenshot": true}}
+	r = call("computer_click", args)
+	var clicked clickResult
+	if err := json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &clicked); err != nil {
+		t.Fatal(err)
+	}
+	if !clicked.InputDelivered || clicked.Observation == nil || clicked.Observation.ID == snap.ID || len(r.Content) != 2 {
+		t.Fatalf("click result: %+v, content=%+v", clicked, r.Content)
+	}
+	picture, ok := r.Content[1].(*mcp.ImageContent)
+	if !ok || picture.MIMEType != "image/jpeg" || len(picture.Data) == 0 {
+		t.Fatalf("missing JPEG content: %+v", r.Content[1])
+	}
+	args["snapshot_id"] = clicked.Observation.ID
+	b.captureErr = desktop.Fail("native_error", "capture failed")
+	r = call("computer_click", args)
+	clicked = clickResult{}
+	if err := json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &clicked); err != nil {
+		t.Fatal(err)
+	}
+	if !clicked.InputDelivered || clicked.Observation != nil || len(r.Content) != 1 || clicked.ObservationError == nil ||
+		clicked.ObservationError.Code != "native_error" || clicked.ObservationError.Message != catalog.Text("click_observation_failed") {
+		t.Fatalf("click result after capture failure: %+v", clicked)
 	}
 }

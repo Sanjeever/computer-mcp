@@ -9,6 +9,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type toolFailure struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Detail  string `json:"detail,omitempty"`
+}
+
 func New(version string, c i18n.Catalog, e *Engine) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "computer-mcp", Version: version}, &mcp.ServerOptions{Instructions: c.Text("instructions")})
 	register(s, e, c, "computer_status", true, status)
@@ -42,12 +48,14 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 			if readOnly && (code == "timeout" || code == "canceled") {
 				message = c.Text(code + "_read_only")
 			}
-			v := map[string]any{"code": code, "message": message}
-			if detail != "" {
-				v["detail"] = detail
-			}
+			v := toolFailure{Code: code, Message: message, Detail: detail}
 			data, _ := json.Marshal(v)
 			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
+		}
+		if v, ok := r.value.(clickResult); ok && v.err != nil {
+			code, detail := errorCode(v.err)
+			v.ObservationError = &toolFailure{Code: code, Message: c.Text("click_observation_failed"), Detail: detail}
+			r.value = v
 		}
 		data, err := json.Marshal(r.value)
 		if err != nil {

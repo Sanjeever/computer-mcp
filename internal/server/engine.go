@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Sanjeever/computer-mcp/internal/desktop"
@@ -33,6 +34,7 @@ type Snapshot struct {
 	OCR          []desktop.RecognizedText `json:"ocr,omitempty"`
 	OCRTruncated bool                     `json:"ocr_truncated,omitempty"`
 	OCRRequested bool                     `json:"-"`
+	maxWidth     int
 }
 type response struct {
 	value any
@@ -40,25 +42,31 @@ type response struct {
 	err   error
 }
 type job struct {
-	ctx    context.Context
-	run    func(context.Context, *state) response
-	result chan response
+	ctx            context.Context
+	run            func(context.Context, *state) response
+	result         chan response
+	inputDelivered atomic.Bool
 }
 type Engine struct {
-	jobs chan job
+	jobs chan *job
 	done chan struct{}
 	stop context.CancelFunc
 	ctx  context.Context
 }
 type state struct {
-	backend  desktop.Backend
-	snapshot *Snapshot
-	previous *Snapshot
+	backend        desktop.Backend
+	snapshot       *Snapshot
+	previous       *Snapshot
+	inputDelivered *atomic.Bool
 }
 
 func NewEngine(parent context.Context) *Engine {
+	return newEngine(parent, desktop.New)
+}
+
+func newEngine(parent context.Context, open func() (desktop.Backend, error)) *Engine {
 	ctx, cancel := context.WithCancel(parent)
-	e := &Engine{jobs: make(chan job, 16), done: make(chan struct{}), stop: cancel, ctx: ctx}
+	e := &Engine{jobs: make(chan *job, 16), done: make(chan struct{}), stop: cancel, ctx: ctx}
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
@@ -99,14 +107,16 @@ func NewEngine(parent context.Context) *Engine {
 					continue
 				}
 				if b == nil {
-					b, err = desktop.New()
+					b, err = open()
 					s.backend = b
 				}
 				var r response
 				if err != nil {
 					r.err = err
 				} else {
+					s.inputDelivered = &j.inputDelivered
 					r = j.run(j.ctx, s)
+					s.inputDelivered = nil
 				}
 				if err = lock.Unlock(); err != nil && r.err == nil {
 					r.err = err
@@ -129,7 +139,7 @@ func (e *Engine) call(ctx context.Context, f func(context.Context, *state) respo
 	defer cancel()
 	stop := context.AfterFunc(e.ctx, cancel)
 	defer stop()
-	j := job{ctx, f, make(chan response, 1)}
+	j := &job{ctx: ctx, run: f, result: make(chan response, 1)}
 	select {
 	case <-e.done:
 		return response{err: context.Canceled}
@@ -143,10 +153,24 @@ func (e *Engine) call(ctx context.Context, f func(context.Context, *state) respo
 	case r := <-j.result:
 		return r
 	case <-ctx.Done():
-		return response{err: ctx.Err()}
+		return j.interrupted(ctx.Err())
 	case <-e.done:
-		return response{err: context.Canceled}
+		return j.interrupted(context.Canceled)
 	}
+}
+
+func (j *job) interrupted(err error) response {
+	select {
+	case r := <-j.result:
+		return r
+	default:
+	}
+	// A blocked native observation still holds the worker. The caller can
+	// learn that the click was delivered without waiting for the provider.
+	if j.inputDelivered.Load() {
+		return clickObservationFailed(err)
+	}
+	return response{err: err}
 }
 func findWindow(b desktop.Backend, id string, active bool) (desktop.Window, error) {
 	windows, err := b.Windows()
@@ -188,12 +212,8 @@ func (s *state) current(id string) (*Snapshot, error) {
 		return nil, desktop.Fail("stale_snapshot", "snapshot exceeded its 60-second lifetime")
 	}
 	if snap.Window == nil {
-		status, err := s.backend.Status()
-		if err != nil {
+		if err := checkDisplayLayout(s.backend, snap.Displays); err != nil {
 			return nil, err
-		}
-		if !slices.Equal(status.Displays, snap.Displays) {
-			return nil, desktop.Fail("stale_snapshot", "display layout changed")
 		}
 		return snap, nil
 	}
@@ -204,6 +224,9 @@ func (s *state) current(id string) (*Snapshot, error) {
 	}
 	if w.PID != snap.Window.PID || w.Bounds != snap.Window.Bounds {
 		return nil, desktop.Fail("stale_snapshot", "window geometry changed")
+	}
+	if w.OwnerID != snap.Window.OwnerID {
+		return nil, desktop.Fail("stale_snapshot", "window ownership changed")
 	}
 	return snap, nil
 }
@@ -241,12 +264,13 @@ type ObserveArgs struct {
 	OCR             bool          `json:"ocr,omitempty"`
 }
 type ClickArgs struct {
-	SnapshotID string         `json:"snapshot_id"`
-	ElementID  string         `json:"element_id,omitempty"`
-	Point      *desktop.Point `json:"point,omitempty"`
-	Button     string         `json:"button,omitempty"`
-	Count      int            `json:"count,omitempty"`
-	HoldKeys   []string       `json:"hold_keys,omitempty"`
+	SnapshotID   string            `json:"snapshot_id"`
+	ElementID    string            `json:"element_id,omitempty"`
+	Point        *desktop.Point    `json:"point,omitempty"`
+	Button       string            `json:"button,omitempty"`
+	Count        int               `json:"count,omitempty"`
+	HoldKeys     []string          `json:"hold_keys,omitempty"`
+	ObserveAfter *ClickObservation `json:"observe_after,omitempty"`
 }
 type MoveArgs struct {
 	SnapshotID string        `json:"snapshot_id"`
@@ -371,6 +395,10 @@ func selectWindows(windows []desktop.Window, app, title string) []desktop.Window
 	return result
 }
 func observe(ctx context.Context, s *state, a ObserveArgs) response {
+	return observeTarget(ctx, s, a, nil)
+}
+
+func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop.Window) response {
 	if a.OCR && !a.Screenshot && !a.Desktop {
 		return invalid("ocr requires screenshot=true")
 	}
@@ -476,7 +504,7 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		if _, err = rand.Read(token); err != nil {
 			return response{err: err}
 		}
-		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, Created: time.Now().UTC(), CaptureMode: "screen"}
+		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, Created: time.Now().UTC(), CaptureMode: "screen", maxWidth: a.MaxWidth}
 		if a.OCR {
 			if err := recognize(ctx, s.backend, snap, capture, a.MaxElements); err != nil {
 				return response{err: err}
@@ -490,9 +518,15 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		return invalid("max_width requires screenshot=true")
 	}
 	s.snapshot = nil
-	w, err := findWindow(s.backend, a.WindowID, false)
-	if err != nil {
-		return response{err: err}
+	var w desktop.Window
+	if target != nil {
+		w = *target
+	} else {
+		var err error
+		w, err = findWindow(s.backend, a.WindowID, false)
+		if err != nil {
+			return response{err: err}
+		}
 	}
 	if !w.Bounds.Valid() {
 		return invalid("window has no visible bounds")
@@ -500,7 +534,7 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 	region := w.Bounds
 	if a.Region != nil {
 		region = *a.Region
-		if !region.Valid() || region.X < w.Bounds.X || region.Y < w.Bounds.Y || region.X+region.Width > w.Bounds.X+w.Bounds.Width || region.Y+region.Height > w.Bounds.Y+w.Bounds.Height {
+		if !rectWithin(region, w.Bounds) {
 			return invalid("region must be inside window bounds")
 		}
 	}
@@ -546,6 +580,7 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 		snap.ImageWidth = capture.Width
 		snap.ImageHeight = capture.Height
 		snap.CaptureMode = a.CaptureMode
+		snap.maxWidth = a.MaxWidth
 		if a.OCR {
 			if err := recognize(ctx, s.backend, snap, capture, a.MaxElements); err != nil {
 				return response{err: err}
@@ -562,6 +597,11 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 	}
 	s.previous = snap
 	return response{value: value, image: data}
+}
+
+func rectWithin(region, bounds desktop.Rect) bool {
+	return region.Valid() && bounds.Contains(desktop.Point{X: region.X, Y: region.Y}) &&
+		region.X+region.Width <= bounds.X+bounds.Width && region.Y+region.Height <= bounds.Y+bounds.Height
 }
 func clip(v string, n int) string {
 	r := []rune(v)
@@ -586,6 +626,9 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	snap, err := s.mouseSnapshot(a.SnapshotID, a.HoldKeys)
 	if err != nil {
 		return response{err: err}
+	}
+	if a.ObserveAfter != nil && snap.Window == nil && !a.ObserveAfter.Screenshot {
+		return invalid("desktop observe_after requires screenshot=true")
 	}
 	var p desktop.Point
 	if a.Point != nil {
@@ -620,7 +663,14 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 		}
 	}
 	s.snapshot = nil
-	return delivered(s.backend.Input(ctx, "click", desktop.Input{Point: p, Button: a.Button, Count: a.Count, HoldKeys: a.HoldKeys}))
+	err = s.backend.Input(ctx, "click", desktop.Input{Point: p, Button: a.Button, Count: a.Count, HoldKeys: a.HoldKeys})
+	if err != nil || a.ObserveAfter == nil {
+		return delivered(err)
+	}
+	if s.inputDelivered != nil {
+		s.inputDelivered.Store(true)
+	}
+	return observeAfterClick(ctx, s, snap, *a.ObserveAfter)
 }
 func (s *state) mouseSnapshot(id string, keys []string) (*Snapshot, error) {
 	seen := map[string]bool{}
