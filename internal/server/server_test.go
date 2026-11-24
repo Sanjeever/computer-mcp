@@ -63,7 +63,7 @@ func TestProtocolAndLanguages(t *testing.T) {
 			for _, args := range []map[string]any{
 				{"snapshot_id": "missing", "from": map[string]any{"x": 0, "y": 0}, "to": map[string]any{"x": 10, "y": 10}},
 				{"snapshot_id": "missing", "path": []map[string]any{{"x": 0, "y": 0}, {"x": 10, "y": 10}}},
-				{"snapshot_id": "missing", "path": []map[string]any{{"x": 0, "y": 0}, {"x": 10, "y": 10}}, "hold_keys": []string{"space", "shift"}},
+				{"snapshot_id": "missing", "path": []map[string]any{{"x": 0, "y": 0}, {"x": 10, "y": 10}}, "hold_keys": []string{"space", "shift"}, "observe_after": map[string]any{"screenshot": true}},
 			} {
 				result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "computer_drag", Arguments: args})
 				if err != nil || !result.IsError {
@@ -156,7 +156,7 @@ func TestClickObservationProtocol(t *testing.T) {
 	}
 	args := map[string]any{"snapshot_id": snap.ID, "element_id": "0", "observe_after": map[string]any{"screenshot": true}}
 	r = call("computer_click", args)
-	var clicked clickResult
+	var clicked mouseObservationResult
 	if err := json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &clicked); err != nil {
 		t.Fatal(err)
 	}
@@ -170,12 +170,12 @@ func TestClickObservationProtocol(t *testing.T) {
 	args["snapshot_id"] = clicked.Observation.ID
 	b.captureErr = desktop.Fail("native_error", "capture failed")
 	r = call("computer_click", args)
-	clicked = clickResult{}
+	clicked = mouseObservationResult{}
 	if err := json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &clicked); err != nil {
 		t.Fatal(err)
 	}
 	if !clicked.InputDelivered || clicked.Observation != nil || len(r.Content) != 1 || clicked.ObservationError == nil ||
-		clicked.ObservationError.Code != "native_error" || clicked.ObservationError.Message != catalog.Text("click_observation_failed") {
+		clicked.ObservationError.Code != "native_error" || clicked.ObservationError.Message != catalog.Text("input_observation_failed") {
 		t.Fatalf("click result after capture failure: %+v", clicked)
 	}
 }

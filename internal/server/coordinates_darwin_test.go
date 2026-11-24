@@ -134,7 +134,7 @@ func TestNativeImageCoordinates(t *testing.T) {
 			}
 			point := desktop.Point{X: float64(marker.Min.X+marker.Max.X) / 2, Y: float64(marker.Min.Y+marker.Max.Y) / 2}
 			source := s.snapshot
-			r = click(ctx, s, ClickArgs{SnapshotID: source.ID, Point: &point, ObserveAfter: &ClickObservation{Screenshot: true}})
+			r = click(ctx, s, ClickArgs{SnapshotID: source.ID, Point: &point, ObserveAfter: &MouseObservation{Screenshot: true}})
 			next := requireClickObservation(t, r)
 			nextImage, err := jpeg.DecodeConfig(bytes.NewReader(r.image))
 			if err != nil || next.ID == source.ID || next.Window.ID != target.ID || next.Region != source.Region ||
@@ -207,10 +207,15 @@ func TestNativeImageCoordinates(t *testing.T) {
 		for i, p := range raw {
 			path[i] = desktop.Point{X: (p.X - s.snapshot.Region.X) * float64(s.snapshot.ImageWidth) / s.snapshot.Region.Width, Y: (p.Y - s.snapshot.Region.Y) * float64(s.snapshot.ImageHeight) / s.snapshot.Region.Height}
 		}
-		if r := drag(ctx, s, DragArgs{SnapshotID: s.snapshot.ID, Path: path, Duration: 600}); r.err != nil {
-			t.Fatal(r.err)
+		source := s.snapshot
+		r := drag(ctx, s, DragArgs{SnapshotID: source.ID, Path: path, Duration: 600, ObserveAfter: &MouseObservation{Screenshot: true}})
+		next, ok := r.value.(mouseObservationResult)
+		img, err := jpeg.DecodeConfig(bytes.NewReader(r.image))
+		if r.err != nil || !ok || !next.InputDelivered || next.Observation == nil || next.Observation.ID == source.ID ||
+			next.Observation.Region != source.Region || err != nil || img.Width != source.ImageWidth || img.Height != source.ImageHeight {
+			t.Fatalf("drag follow-up: %+v, image=%+v, decode=%v", r, img, err)
 		}
-		r := wait(ctx, s, WaitArgs{WindowID: target.ID, Text: "path complete", Timeout: 2000})
+		r = wait(ctx, s, WaitArgs{WindowID: target.ID, Text: "path complete", Timeout: 2000})
 		if r.err != nil || r.value.(map[string]any)["matched"] != true {
 			t.Fatalf("continuous path failed: %+v", r)
 		}
@@ -218,7 +223,7 @@ func TestNativeImageCoordinates(t *testing.T) {
 			t.Fatal(r.err)
 		}
 		cancelCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-		err := b.Input(cancelCtx, "drag", desktop.Input{Path: raw, Duration: 1000})
+		err = b.Input(cancelCtx, "drag", desktop.Input{Path: raw, Duration: 1000})
 		cancel()
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("cancellation: %v", err)

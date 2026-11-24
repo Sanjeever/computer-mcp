@@ -166,9 +166,9 @@ func (j *job) interrupted(err error) response {
 	default:
 	}
 	// A blocked native observation still holds the worker. The caller can
-	// learn that the click was delivered without waiting for the provider.
+	// learn that the input was delivered without waiting for the provider.
 	if j.inputDelivered.Load() {
-		return clickObservationFailed(err)
+		return mouseObservationFailed(err)
 	}
 	return response{err: err}
 }
@@ -270,7 +270,7 @@ type ClickArgs struct {
 	Button       string            `json:"button,omitempty"`
 	Count        int               `json:"count,omitempty"`
 	HoldKeys     []string          `json:"hold_keys,omitempty"`
-	ObserveAfter *ClickObservation `json:"observe_after,omitempty"`
+	ObserveAfter *MouseObservation `json:"observe_after,omitempty"`
 }
 type MoveArgs struct {
 	SnapshotID string        `json:"snapshot_id"`
@@ -299,12 +299,13 @@ type ScrollArgs struct {
 	HoldKeys   []string      `json:"hold_keys,omitempty"`
 }
 type DragArgs struct {
-	SnapshotID string          `json:"snapshot_id"`
-	From       *desktop.Point  `json:"from,omitempty"`
-	To         *desktop.Point  `json:"to,omitempty"`
-	Path       []desktop.Point `json:"path,omitempty"`
-	Duration   int             `json:"duration_ms,omitempty"`
-	HoldKeys   []string        `json:"hold_keys,omitempty"`
+	SnapshotID   string            `json:"snapshot_id"`
+	From         *desktop.Point    `json:"from,omitempty"`
+	To           *desktop.Point    `json:"to,omitempty"`
+	Path         []desktop.Point   `json:"path,omitempty"`
+	Duration     int               `json:"duration_ms,omitempty"`
+	HoldKeys     []string          `json:"hold_keys,omitempty"`
+	ObserveAfter *MouseObservation `json:"observe_after,omitempty"`
 }
 type WaitArgs struct {
 	WindowID  string `json:"window_id"`
@@ -667,10 +668,7 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	if err != nil || a.ObserveAfter == nil {
 		return delivered(err)
 	}
-	if s.inputDelivered != nil {
-		s.inputDelivered.Store(true)
-	}
-	return observeAfterClick(ctx, s, snap, *a.ObserveAfter)
+	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter)
 }
 func (s *state) mouseSnapshot(id string, keys []string) (*Snapshot, error) {
 	seen := map[string]bool{}
@@ -801,6 +799,9 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 	if err != nil {
 		return response{err: err}
 	}
+	if a.ObserveAfter != nil && snap.Window == nil && !a.ObserveAfter.Screenshot {
+		return invalid("desktop observe_after requires screenshot=true")
+	}
 	points := make([]desktop.Point, len(path))
 	for i, point := range path {
 		if err := ctx.Err(); err != nil {
@@ -825,7 +826,11 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 		return response{err: err}
 	}
 	s.snapshot = nil
-	return delivered(s.backend.Input(ctx, "drag", desktop.Input{Path: points, Duration: a.Duration, HoldKeys: a.HoldKeys}))
+	err = s.backend.Input(ctx, "drag", desktop.Input{Path: points, Duration: a.Duration, HoldKeys: a.HoldKeys})
+	if err != nil || a.ObserveAfter == nil {
+		return delivered(err)
+	}
+	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter)
 }
 func wait(ctx context.Context, s *state, a WaitArgs) response {
 	if a.WindowID == "" {

@@ -8,40 +8,43 @@ import (
 	"github.com/Sanjeever/computer-mcp/internal/desktop"
 )
 
-type ClickObservation struct {
+type MouseObservation struct {
 	Screenshot bool `json:"screenshot,omitempty"`
 }
 
-type clickResult struct {
+type mouseObservationResult struct {
 	InputDelivered   bool         `json:"input_delivered"`
 	Observation      *Snapshot    `json:"observation,omitempty"`
 	ObservationError *toolFailure `json:"observation_error,omitempty"`
 	err              error
 }
 
-func clickObservationFailed(err error) response {
-	return response{value: clickResult{InputDelivered: true, err: err}}
+func mouseObservationFailed(err error) response {
+	return response{value: mouseObservationResult{InputDelivered: true, err: err}}
 }
 
-func observeAfterClick(ctx context.Context, s *state, source *Snapshot, options ClickObservation) response {
-	// Native input can be queued before the application processes the click.
+func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, options MouseObservation) response {
+	if s.inputDelivered != nil {
+		s.inputDelivered.Store(true)
+	}
+	// Native events can be queued before the application processes them.
 	select {
 	case <-ctx.Done():
-		return clickObservationFailed(ctx.Err())
+		return mouseObservationFailed(ctx.Err())
 	case <-time.After(100 * time.Millisecond):
 	}
 	a := ObserveArgs{Desktop: source.Window == nil, Screenshot: options.Screenshot}
 	var target *desktop.Window
 	if a.Desktop {
 		if err := checkDisplayLayout(s.backend, source.Displays); err != nil {
-			return clickObservationFailed(err)
+			return mouseObservationFailed(err)
 		}
 		a.Region = &source.Region
 		a.MaxWidth = source.maxWidth
 	} else {
-		w, err := clickObservationWindow(s.backend, *source.Window)
+		w, err := mouseObservationWindow(s.backend, *source.Window)
 		if err != nil {
-			return clickObservationFailed(err)
+			return mouseObservationFailed(err)
 		}
 		target = &w
 		if a.Screenshot && w.ID == source.Window.ID {
@@ -60,14 +63,14 @@ func observeAfterClick(ctx context.Context, s *state, source *Snapshot, options 
 	base := s.previous
 	r := observeTarget(ctx, s, a, target)
 	if r.err != nil {
-		return clickObservationFailed(r.err)
+		return mouseObservationFailed(r.err)
 	}
 	var err error
 	if target == nil {
 		err = checkDisplayLayout(s.backend, source.Displays)
 	} else {
 		var current desktop.Window
-		current, err = clickObservationWindow(s.backend, *source.Window)
+		current, err = mouseObservationWindow(s.backend, *source.Window)
 		if err == nil && (current.ID != target.ID || current.Bounds != target.Bounds || current.OwnerID != target.OwnerID) {
 			err = desktop.Fail("stale_snapshot", "target changed during follow-up observation")
 		}
@@ -77,9 +80,9 @@ func observeAfterClick(ctx context.Context, s *state, source *Snapshot, options 
 	}
 	if err != nil {
 		s.snapshot, s.previous = nil, base
-		return clickObservationFailed(err)
+		return mouseObservationFailed(err)
 	}
-	return response{value: clickResult{InputDelivered: true, Observation: s.snapshot}, image: r.image}
+	return response{value: mouseObservationResult{InputDelivered: true, Observation: s.snapshot}, image: r.image}
 }
 
 func checkDisplayLayout(b desktop.Backend, displays []desktop.Display) error {
@@ -93,7 +96,7 @@ func checkDisplayLayout(b desktop.Backend, displays []desktop.Display) error {
 	return nil
 }
 
-func clickObservationWindow(b desktop.Backend, source desktop.Window) (desktop.Window, error) {
+func mouseObservationWindow(b desktop.Backend, source desktop.Window) (desktop.Window, error) {
 	windows, err := b.Windows()
 	if err != nil {
 		return desktop.Window{}, err
@@ -114,5 +117,5 @@ func clickObservationWindow(b desktop.Backend, source desktop.Window) (desktop.W
 	if same.ID != "" {
 		return same, nil
 	}
-	return desktop.Window{}, desktop.Fail("not_active", "click target or its owned window is no longer active")
+	return desktop.Window{}, desktop.Fail("not_active", "input target or its owned window is no longer active")
 }

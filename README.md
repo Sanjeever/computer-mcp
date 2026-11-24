@@ -65,9 +65,9 @@ On Windows, `computer_type` sends each LF, CRLF, or standalone CR as one Enter k
 
 Use a fresh observation after input. A new observation, a wait, window mutation, or input invalidates the previous snapshot; untouched snapshots expire after 60 seconds. This applies across all windows and the desktop: a desktop observation replaces a window snapshot too. After `stale_snapshot`, observe the intended target again and use the new references and screenshot coordinates. Geometry, focus, and element properties are checked before input. These checks cannot make desktop interaction atomic with external changes.
 
-Pass `observe_after` as an empty object on `computer_click` to return the next window observation under `observation`. Add `"screenshot":true` inside `observe_after` for JPEG content and use the returned `observation.snapshot_id` and image for the next action. A new screenshot of the same window reuses the capture mode and width limit. It reuses the previous crop relative to the window when it still fits. Desktop follow-up requires `"screenshot":true` and reuses the desktop region and width limit.
+Pass `observe_after` as an empty object on `computer_click` or `computer_drag` to return the next window observation under `observation`. Add `"screenshot":true` inside `observe_after` for JPEG content and use the returned `observation.snapshot_id` and image for the next action. A new screenshot of the same window reuses the capture mode and width limit. It reuses the previous crop relative to the window when it still fits. Desktop follow-up requires `"screenshot":true` and reuses the desktop region and width limit.
 
-On Windows, the follow-up can follow a foreground window directly owned by the click target, or return to the target's owner after its dialog closes. The server briefly waits for the application to process the click. For slower transitions, use `computer_wait` or observe again. If `input_delivered:true` is paired with `observation_error`, the click was sent. Obtain a fresh observation before deciding whether to repeat it.
+On Windows, the follow-up can observe a foreground window directly owned by the input target, or return to the target's owner after its dialog closes. The server briefly waits for the application to process the input. For slower transitions, use `computer_wait` or observe again. If `input_delivered:true` is paired with `observation_error`, the input was sent. Obtain a fresh observation before deciding whether to repeat it.
 
 An input attempt consumes its snapshot once it reaches native dispatch, including an uncertain native failure. A request rejected during argument or input-precondition validation does not necessarily consume it. Do not infer snapshot validity from success or failure alone.
 
@@ -96,7 +96,8 @@ Window activation does not select a text field. Check the observed `focused` ele
     { "x": 145, "y": 95 },
     { "x": 165, "y": 115 }
   ],
-  "duration_ms": 800
+  "duration_ms": 800,
+  "observe_after": { "screenshot": true }
 }
 ```
 

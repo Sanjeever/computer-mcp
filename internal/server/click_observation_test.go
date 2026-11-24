@@ -47,7 +47,7 @@ func setupClickDesktop() (*state, *clickDesktop) {
 
 func requireClickObservation(t *testing.T, r response) *Snapshot {
 	t.Helper()
-	result, ok := r.value.(clickResult)
+	result, ok := r.value.(mouseObservationResult)
 	if r.err != nil || !ok || !result.InputDelivered || result.Observation == nil || result.err != nil {
 		t.Fatalf("click observation: %+v, %v", r.value, r.err)
 	}
@@ -66,7 +66,7 @@ func TestClickObservationFollowsOwnedDialog(t *testing.T) {
 	if r := observe(ctx, s, ObserveArgs{}); r.err != nil {
 		t.Fatal(r.err)
 	}
-	args := ClickArgs{SnapshotID: s.snapshot.ID, ElementID: open.ID, ObserveAfter: &ClickObservation{}}
+	args := ClickArgs{SnapshotID: s.snapshot.ID, ElementID: open.ID, ObserveAfter: &MouseObservation{}}
 	b.afterInput = func() {
 		blocked := main
 		blocked.Active, blocked.BlockedBy = false, dialog.ID
@@ -82,7 +82,7 @@ func TestClickObservationFollowsOwnedDialog(t *testing.T) {
 		b.windows = []desktop.Window{main}
 		b.nodes = []desktop.Element{open}
 	}
-	closed := requireClickObservation(t, click(ctx, s, ClickArgs{SnapshotID: opened.ID, ElementID: closeButton.ID, ObserveAfter: &ClickObservation{}}))
+	closed := requireClickObservation(t, click(ctx, s, ClickArgs{SnapshotID: opened.ID, ElementID: closeButton.ID, ObserveAfter: &MouseObservation{}}))
 	if closed.Window.ID != main.ID || closed != s.snapshot || closed.ID == opened.ID || b.inputs != 2 {
 		t.Fatalf("closed observation: %+v, inputs=%d", closed, b.inputs)
 	}
@@ -98,7 +98,7 @@ func TestClickObservationReusesImageCoordinates(t *testing.T) {
 	old := s.snapshot
 	b.afterInput = func() { b.windows[0].Bounds.X += 40 }
 	point := desktop.Point{X: 100, Y: 50}
-	r := click(ctx, s, ClickArgs{SnapshotID: old.ID, Point: &point, ObserveAfter: &ClickObservation{Screenshot: true}})
+	r := click(ctx, s, ClickArgs{SnapshotID: old.ID, Point: &point, ObserveAfter: &MouseObservation{Screenshot: true}})
 	next := requireClickObservation(t, r)
 	region.X += 40
 	if next.ID == old.ID || next.Region != region || next.CaptureMode != "screen" || next.maxWidth != 500 || len(r.image) == 0 {
@@ -121,7 +121,7 @@ func TestDesktopClickObservationRequiresImage(t *testing.T) {
 		t.Fatal(r.err)
 	}
 	old := s.snapshot
-	args := ClickArgs{SnapshotID: old.ID, Point: &desktop.Point{X: 10, Y: 10}, ObserveAfter: &ClickObservation{}}
+	args := ClickArgs{SnapshotID: old.ID, Point: &desktop.Point{X: 10, Y: 10}, ObserveAfter: &MouseObservation{}}
 	requireCode(t, click(ctx, s, args), "invalid_argument")
 	if b.inputs != 0 || s.snapshot != old {
 		t.Fatal("invalid options consumed the desktop snapshot")
@@ -157,8 +157,8 @@ func TestClickObservationFailurePreservesDelivery(t *testing.T) {
 				wantCode = "native_error"
 				b.captureErr = desktop.Fail(wantCode, "capture failed")
 			}
-			r := click(ctx, s, ClickArgs{SnapshotID: old.ID, ElementID: "0", ObserveAfter: &ClickObservation{Screenshot: true}})
-			result, ok := r.value.(clickResult)
+			r := click(ctx, s, ClickArgs{SnapshotID: old.ID, ElementID: "0", ObserveAfter: &MouseObservation{Screenshot: true}})
+			result, ok := r.value.(mouseObservationResult)
 			if r.err != nil || !ok || !result.InputDelivered || result.Observation != nil || len(r.image) != 0 {
 				t.Fatalf("failed observation: %+v, %v", r.value, r.err)
 			}
@@ -195,7 +195,7 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 	done := make(chan response, 1)
 	go func() {
 		done <- e.call(callCtx, func(ctx context.Context, s *state) response {
-			return click(ctx, s, ClickArgs{SnapshotID: snapshot.ID, ElementID: "0", ObserveAfter: &ClickObservation{}})
+			return click(ctx, s, ClickArgs{SnapshotID: snapshot.ID, ElementID: "0", ObserveAfter: &MouseObservation{}})
 		})
 	}()
 	select {
@@ -206,7 +206,7 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 	stop()
 	select {
 	case r := <-done:
-		result, ok := r.value.(clickResult)
+		result, ok := r.value.(mouseObservationResult)
 		if r.err != nil || !ok || !result.InputDelivered || result.Observation != nil || !errors.Is(result.err, context.Canceled) {
 			t.Fatalf("canceled click: %+v, %v", r.value, r.err)
 		}

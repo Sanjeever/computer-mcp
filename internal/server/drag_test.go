@@ -80,3 +80,33 @@ func TestDragChecksIntermediateTargetsAndDoesNotRetry(t *testing.T) {
 		t.Fatal("uncertain input retried or snapshot retained")
 	}
 }
+
+func TestDragObservationChainsStrokesAndReportsCaptureFailure(t *testing.T) {
+	s, b := setupClickDesktop()
+	ctx := context.Background()
+	region := desktop.Rect{X: -50, Y: 150, Width: 800, Height: 400}
+	if r := observe(ctx, s, ObserveArgs{Screenshot: true, Region: &region, MaxWidth: 500}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	args := DragArgs{
+		SnapshotID: s.snapshot.ID, Path: []desktop.Point{{X: 10, Y: 10}, {X: 400, Y: 200}},
+		ObserveAfter: &MouseObservation{Screenshot: true},
+	}
+	first := drag(ctx, s, args)
+	next, ok := first.value.(mouseObservationResult)
+	if first.err != nil || !ok || !next.InputDelivered || next.Observation == nil ||
+		next.Observation.ID == args.SnapshotID || next.Observation.Region != region ||
+		next.Observation.maxWidth != 500 || len(first.image) == 0 {
+		t.Fatalf("drag follow-up: %+v", first)
+	}
+	requireCode(t, drag(ctx, s, args), "stale_snapshot")
+	args.SnapshotID = next.Observation.ID
+	b.captureErr = desktop.Fail("native_error", "capture failed")
+	second := drag(ctx, s, args)
+	failed, ok := second.value.(mouseObservationResult)
+	if second.err != nil || !ok || !failed.InputDelivered || failed.Observation != nil ||
+		len(second.image) != 0 || s.snapshot != nil || s.previous != next.Observation || b.inputs != 2 {
+		t.Fatalf("failed drag follow-up: %+v, inputs=%d", second, b.inputs)
+	}
+	requireCode(t, response{err: failed.err}, "native_error")
+}

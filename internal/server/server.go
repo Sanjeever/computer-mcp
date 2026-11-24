@@ -52,9 +52,9 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 			data, _ := json.Marshal(v)
 			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
 		}
-		if v, ok := r.value.(clickResult); ok && v.err != nil {
+		if v, ok := r.value.(mouseObservationResult); ok && v.err != nil {
 			code, detail := errorCode(v.err)
-			v.ObservationError = &toolFailure{Code: code, Message: c.Text("click_observation_failed"), Detail: detail}
+			v.ObservationError = &toolFailure{Code: code, Message: c.Text("input_observation_failed"), Detail: detail}
 			r.value = v
 		}
 		data, err := json.Marshal(r.value)
