@@ -8,6 +8,7 @@ import (
 )
 
 func recognize(ctx context.Context, b desktop.Backend, snap *Snapshot, capture desktop.Capture, limit int) error {
+	desktop.ReportStage(ctx, "ocr")
 	regions, truncated, err := b.Recognize(ctx, capture, limit)
 	if err != nil {
 		return err

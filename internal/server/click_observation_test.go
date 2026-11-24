@@ -188,7 +188,7 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 	defer e.Close()
 	started, release := make(chan struct{}), make(chan struct{})
 	defer close(release)
-	r := e.call(ctx, func(ctx context.Context, s *state) response { return observe(ctx, s, ObserveArgs{}) })
+	r := e.call(ctx, "computer_observe", func(ctx context.Context, s *state) response { return observe(ctx, s, ObserveArgs{}) })
 	if r.err != nil {
 		t.Fatal(r.err)
 	}
@@ -201,7 +201,7 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 	defer stop()
 	done := make(chan response, 1)
 	go func() {
-		done <- e.call(callCtx, func(ctx context.Context, s *state) response {
+		done <- e.call(callCtx, "computer_click", func(ctx context.Context, s *state) response {
 			return click(ctx, s, ClickArgs{SnapshotID: snapshot.ID, ElementID: "0", ObserveAfter: &MouseObservation{}})
 		})
 	}()
@@ -216,6 +216,9 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 		result, ok := r.value.(mouseObservationResult)
 		if r.err != nil || !ok || !result.InputDelivered || result.Observation != nil || !errors.Is(result.err, context.Canceled) {
 			t.Fatalf("canceled click: %+v, %v", r.value, r.err)
+		}
+		if r.timing == nil || r.timing.Stage != "accessibility" {
+			t.Fatalf("missing follow-up stage: %+v", r.timing)
 		}
 	case <-ctx.Done():
 		t.Fatal("canceled click still waiting for the provider")

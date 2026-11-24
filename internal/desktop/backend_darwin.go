@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime/cgo"
 	"unsafe"
 )
 
@@ -133,7 +134,9 @@ func (b *macBackend) capture(ctx context.Context, id string, r Rect, width int) 
 		windowID = C.CString(id)
 		defer C.free(unsafe.Pointer(windowID))
 	}
-	ptr := C.cm_capture(windowID, C.double(r.X), C.double(r.Y), C.double(r.Width), C.double(r.Height), C.int(width), &length, &ow, &oh, &nativeErr)
+	progress := cgo.NewHandle(ctx)
+	defer progress.Delete()
+	ptr := C.cm_capture(windowID, C.double(r.X), C.double(r.Y), C.double(r.Width), C.double(r.Height), C.int(width), C.uintptr_t(progress), &length, &ow, &oh, &nativeErr)
 	if nativeErr != nil {
 		defer C.free(unsafe.Pointer(nativeErr))
 		return Capture{}, Fail("native_error", C.GoString(nativeErr))
@@ -143,6 +146,19 @@ func (b *macBackend) capture(ctx context.Context, id string, r Rect, width int) 
 	}
 	defer C.free(unsafe.Pointer(ptr))
 	return Capture{Data: C.GoBytes(unsafe.Pointer(ptr), C.int(length)), Width: int(ow), Height: int(oh)}, nil
+}
+
+//export cm_capture_progress
+func cm_capture_progress(handle C.uintptr_t, stage C.int) {
+	ctx := cgo.Handle(handle).Value().(context.Context)
+	switch stage {
+	case C.CM_CAPTURE_CONTENT:
+		ReportStage(ctx, "capture_shareable_content")
+	case C.CM_CAPTURE_IMAGE:
+		ReportStage(ctx, "capture_image")
+	case C.CM_CAPTURE_ENCODE:
+		ReportStage(ctx, "capture_encode")
+	}
 }
 func (b *macBackend) Input(ctx context.Context, op string, in Input) (result error) {
 	if err := ctx.Err(); err != nil {

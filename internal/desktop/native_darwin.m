@@ -784,7 +784,7 @@ void cm_close(void) {
 @end
 
 unsigned char *cm_capture(const char *window_id, double x, double y, double width, double height, int max_width,
-                          size_t *length, int *out_width, int *out_height, char **error) {
+                          uintptr_t progress, size_t *length, int *out_width, int *out_height, char **error) {
     @autoreleasepool {
         if (!CGPreflightScreenCaptureAccess())
             return NULL;
@@ -800,6 +800,7 @@ unsigned char *cm_capture(const char *window_id, double x, double y, double widt
             return NULL;
         }
         CMCaptureResult *ready = [CMCaptureResult new];
+        cm_capture_progress(progress, CM_CAPTURE_CONTENT);
         [SCShareableContent
             getShareableContentExcludingDesktopWindows:NO
                                    onScreenWindowsOnly:YES
@@ -836,6 +837,7 @@ unsigned char *cm_capture(const char *window_id, double x, double y, double widt
                 config.ignoreShadowsSingleWindow = YES;
                 config.showsCursor = NO;
                 CMCaptureResult *done = [CMCaptureResult new];
+                cm_capture_progress(progress, CM_CAPTURE_IMAGE);
                 [SCScreenshotManager captureImageWithFilter:filter configuration:config
                     completionHandler:^(CGImageRef value, NSError *err) {
                         if (value) done->image = CGImageRetain(value);
@@ -874,6 +876,7 @@ unsigned char *cm_capture(const char *window_id, double x, double y, double widt
             config.height = MAX(1, (size_t)ceil(part.size.height * scale));
             config.showsCursor = NO;
             CMCaptureResult *done = [CMCaptureResult new];
+            cm_capture_progress(progress, CM_CAPTURE_IMAGE);
             [SCScreenshotManager captureImageWithFilter:filter
                                           configuration:config
                                       completionHandler:^(CGImageRef value, NSError *err) {
@@ -905,6 +908,7 @@ unsigned char *cm_capture(const char *window_id, double x, double y, double widt
                 *error = strdup("region is outside active displays");
             return NULL;
         }
+        cm_capture_progress(progress, CM_CAPTURE_ENCODE);
         CGImageRef img = CGBitmapContextCreateImage(canvas);
         CGContextRelease(canvas);
         NSMutableData *data = [NSMutableData data];

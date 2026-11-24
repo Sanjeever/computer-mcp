@@ -37,21 +37,24 @@ type Snapshot struct {
 	maxWidth     int
 }
 type response struct {
-	value any
-	image []byte
-	err   error
+	value  any
+	image  []byte
+	err    error
+	timing *stageTiming
 }
 type job struct {
 	ctx            context.Context
 	run            func(context.Context, *state) response
 	result         chan response
 	inputDelivered atomic.Bool
+	progress       requestProgress
 }
 type Engine struct {
-	jobs chan *job
-	done chan struct{}
-	stop context.CancelFunc
-	ctx  context.Context
+	jobs       chan *job
+	done       chan struct{}
+	stop       context.CancelFunc
+	ctx        context.Context
+	logTimings bool
 }
 type state struct {
 	backend        desktop.Backend
@@ -66,7 +69,10 @@ func NewEngine(parent context.Context) *Engine {
 
 func newEngine(parent context.Context, open func() (desktop.Backend, error)) *Engine {
 	ctx, cancel := context.WithCancel(parent)
-	e := &Engine{jobs: make(chan *job, 16), done: make(chan struct{}), stop: cancel, ctx: ctx}
+	e := &Engine{
+		jobs: make(chan *job, 16), done: make(chan struct{}), stop: cancel, ctx: ctx,
+		logTimings: os.Getenv("COMPUTER_MCP_TIMINGS") == "1",
+	}
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
@@ -86,26 +92,28 @@ func newEngine(parent context.Context, open func() (desktop.Backend, error)) *En
 				return
 			case j := <-e.jobs:
 				if err := j.ctx.Err(); err != nil {
-					j.result <- response{err: err}
+					j.finish(response{err: err})
 					continue
 				}
+				j.progress.begin("desktop_lock")
 				if cacheErr != nil {
-					j.result <- response{err: cacheErr}
+					j.finish(response{err: cacheErr})
 					continue
 				}
 				if err := os.MkdirAll(filepath.Dir(lock.Path()), 0700); err != nil {
-					j.result <- response{err: err}
+					j.finish(response{err: err})
 					continue
 				}
 				acquired, err := lock.TryLock()
 				if err != nil {
-					j.result <- response{err: err}
+					j.finish(response{err: err})
 					continue
 				}
 				if !acquired {
-					j.result <- response{err: desktop.Fail("busy", "")}
+					j.finish(response{err: desktop.Fail("busy", "")})
 					continue
 				}
+				j.progress.begin("request")
 				if b == nil {
 					b, err = open()
 					s.backend = b
@@ -121,7 +129,7 @@ func newEngine(parent context.Context, open func() (desktop.Backend, error)) *En
 				if err = lock.Unlock(); err != nil && r.err == nil {
 					r.err = err
 				}
-				j.result <- r
+				j.finish(r)
 			}
 		}
 	}()
@@ -134,28 +142,30 @@ func (e *Engine) Close() {
 	case <-time.After(2 * time.Second):
 	}
 }
-func (e *Engine) call(ctx context.Context, f func(context.Context, *state) response) response {
+func (e *Engine) call(ctx context.Context, name string, f func(context.Context, *state) response) response {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	stop := context.AfterFunc(e.ctx, cancel)
 	defer stop()
-	j := &job{ctx: ctx, run: f, result: make(chan response, 1)}
+	j := &job{run: f, result: make(chan response, 1), progress: requestProgress{tool: name, log: e.logTimings}}
+	j.progress.begin("queue")
+	j.ctx = desktop.WithStageReporter(ctx, j.progress.begin)
 	select {
 	case <-e.done:
-		return response{err: context.Canceled}
+		return j.withTiming(response{err: context.Canceled})
 	case <-ctx.Done():
-		return response{err: ctx.Err()}
+		return j.withTiming(response{err: ctx.Err()})
 	case e.jobs <- j:
 	default:
 		return response{err: desktop.Fail("busy", "")}
 	}
 	select {
 	case r := <-j.result:
-		return r
+		return j.withTiming(r)
 	case <-ctx.Done():
-		return j.interrupted(ctx.Err())
+		return j.withTiming(j.interrupted(ctx.Err()))
 	case <-e.done:
-		return j.interrupted(context.Canceled)
+		return j.withTiming(j.interrupted(context.Canceled))
 	}
 }
 
@@ -463,6 +473,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 			return invalid("desktop mode does not accept window_id")
 		}
 		s.snapshot = nil
+		desktop.ReportStage(ctx, "display_layout")
 		status, err := s.backend.Status()
 		if err != nil {
 			return response{err: err}
@@ -488,6 +499,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 		if !intersects {
 			return invalid("region is outside active displays")
 		}
+		desktop.ReportStage(ctx, "capture")
 		capture, err := s.backend.Capture(ctx, region, a.MaxWidth)
 		if err != nil {
 			return response{err: err}
@@ -518,6 +530,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 		w = *target
 	} else {
 		var err error
+		desktop.ReportStage(ctx, "window_list")
 		w, err = findWindow(s.backend, a.WindowID, false)
 		if err != nil {
 			return response{err: err}
@@ -537,6 +550,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	if a.SinceSnapshotID != "" && (s.previous.Window == nil || s.previous.Window.ID != w.ID || !sameScope(s.previous.Scope, options) || s.previous.OCRRequested != a.OCR) {
 		return invalid("diff requires the same window and observation filters")
 	}
+	desktop.ReportStage(ctx, "accessibility")
 	elements, truncated, err := s.backend.Observe(ctx, w, options)
 	if err != nil {
 		return response{err: err}
@@ -560,6 +574,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	var data []byte
 	if a.Screenshot {
 		var capture desktop.Capture
+		desktop.ReportStage(ctx, "capture")
 		if a.CaptureMode == "" {
 			a.CaptureMode = "window"
 		}
@@ -658,6 +673,7 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 		}
 	}
 	s.snapshot = nil
+	desktop.ReportStage(ctx, "input")
 	err = s.backend.Input(ctx, "click", desktop.Input{Point: p, Button: a.Button, Count: a.Count, HoldKeys: a.HoldKeys})
 	if err != nil || a.ObserveAfter == nil {
 		return delivered(err)
@@ -722,6 +738,7 @@ func typeText(ctx context.Context, s *state, a TypeArgs) response {
 		return response{err: err}
 	}
 	s.snapshot = nil
+	desktop.ReportStage(ctx, "input")
 	return delivered(s.backend.Input(ctx, "type", desktop.Input{Text: a.Text}))
 }
 func key(ctx context.Context, s *state, a KeyArgs) response {
@@ -749,6 +766,7 @@ func key(ctx context.Context, s *state, a KeyArgs) response {
 		return response{err: err}
 	}
 	s.snapshot = nil
+	desktop.ReportStage(ctx, "input")
 	return delivered(s.backend.Input(ctx, "key", desktop.Input{Keys: a.Keys}))
 }
 func scroll(ctx context.Context, s *state, a ScrollArgs) response {
@@ -820,6 +838,7 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 		return response{err: err}
 	}
 	s.snapshot = nil
+	desktop.ReportStage(ctx, "input")
 	err = s.backend.Input(ctx, "drag", desktop.Input{Path: points, Duration: a.Duration, HoldKeys: a.HoldKeys})
 	if err != nil || a.ObserveAfter == nil {
 		return delivered(err)
@@ -850,10 +869,12 @@ func wait(ctx context.Context, s *state, a WaitArgs) response {
 		if ctx.Err() != nil {
 			return finished()
 		}
+		desktop.ReportStage(ctx, "window_list")
 		w, err := findWindow(s.backend, a.WindowID, a.Active || a.Focused || a.FocusName != "")
 		ready := err == nil
 		if ready && (a.Focused || a.FocusName != "") {
 			var focused desktop.Element
+			desktop.ReportStage(ctx, "focus")
 			focused, err = s.backend.Focus(w)
 			ready = err == nil && focused.Focused && (a.FocusName == "" || focused.Name == a.FocusName)
 		}
@@ -862,6 +883,7 @@ func wait(ctx context.Context, s *state, a WaitArgs) response {
 				return response{value: map[string]any{"matched": true, "window": w}}
 			}
 			var nodes []desktop.Element
+			desktop.ReportStage(ctx, "accessibility")
 			nodes, _, err = s.backend.Observe(ctx, w, desktop.ObserveOptions{Limit: 500, MaxDepth: 64, Text: a.Text})
 			if err == nil {
 				for _, n := range nodes {

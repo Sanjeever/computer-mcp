@@ -105,7 +105,7 @@ func TestProtocolAndLanguages(t *testing.T) {
 					if err != nil || !result.IsError {
 						t.Fatalf("error response: %v %+v", err, result)
 					}
-					var got struct{ Code, Message string }
+					var got toolFailure
 					if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
 						t.Fatal(err)
 					}
@@ -114,7 +114,7 @@ func TestProtocolAndLanguages(t *testing.T) {
 					if readOnly {
 						key += "_read_only"
 					}
-					if got.Code != code || got.Message != catalog.Text(key) {
+					if got.Code != code || got.Message != catalog.Text(key) || got.Timing == nil || got.Timing.Stage != "request" {
 						t.Fatalf("incorrect delivery semantics: %+v", got)
 					}
 				}
@@ -168,14 +168,15 @@ func TestClickObservationProtocol(t *testing.T) {
 		t.Fatalf("missing JPEG content: %+v", r.Content[1])
 	}
 	args["snapshot_id"] = clicked.Observation.ID
-	b.captureErr = desktop.Fail("native_error", "capture failed")
+	b.captureErr = context.DeadlineExceeded
 	r = call("computer_click", args)
 	clicked = mouseObservationResult{}
 	if err := json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &clicked); err != nil {
 		t.Fatal(err)
 	}
 	if !clicked.InputDelivered || clicked.Observation != nil || len(r.Content) != 1 || clicked.ObservationError == nil ||
-		clicked.ObservationError.Code != "native_error" || clicked.ObservationError.Message != catalog.Text("input_observation_failed") {
+		clicked.ObservationError.Code != "timeout" || clicked.ObservationError.Message != catalog.Text("input_observation_failed") ||
+		clicked.ObservationError.Timing == nil || clicked.ObservationError.Timing.Stage != "capture" {
 		t.Fatalf("click result after capture failure: %+v", clicked)
 	}
 }

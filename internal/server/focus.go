@@ -56,12 +56,14 @@ func prepareKeyboard(ctx context.Context, s *state, id string, auto bool, focusN
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
 	defer cancel()
+	desktop.ReportStage(ctx, "window_list")
 	w, err := findWindow(s.backend, id, !auto)
 	if err != nil {
 		return err
 	}
 	if auto && !w.Active {
 		s.snapshot = nil
+		desktop.ReportStage(ctx, "activation")
 		w, err = activateWindow(ctx, s.backend, w, timeout)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil {
@@ -71,6 +73,7 @@ func prepareKeyboard(ctx context.Context, s *state, id string, auto bool, focusN
 		}
 	}
 	for {
+		desktop.ReportStage(ctx, "window_list")
 		w, err = findWindow(s.backend, id, true)
 		if err != nil {
 			return err
@@ -78,6 +81,7 @@ func prepareKeyboard(ctx context.Context, s *state, id string, auto bool, focusN
 		if focusName == "" {
 			return ctx.Err()
 		}
+		desktop.ReportStage(ctx, "focus")
 		focused, err := s.backend.Focus(w)
 		if err != nil {
 			return err

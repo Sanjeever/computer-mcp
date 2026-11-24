@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -106,9 +107,14 @@ func TestNativeImageCoordinates(t *testing.T) {
 				region.Height -= 40
 				args.Region = &region
 			}
-			r := observe(ctx, s, args)
+			var stages []string
+			report := func(stage string) { stages = append(stages, stage) }
+			r := observe(desktop.WithStageReporter(ctx, report), s, args)
 			if r.err != nil {
 				t.Fatal(r.err)
+			}
+			if want := []string{"window_list", "accessibility", "capture", "capture_shareable_content", "capture_image", "capture_encode"}; !slices.Equal(stages, want) {
+				t.Fatalf("native capture stages: %v", stages)
 			}
 			reset := false
 			for _, element := range s.snapshot.Elements {

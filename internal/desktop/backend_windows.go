@@ -416,10 +416,12 @@ func (b *winBackend) Capture(ctx context.Context, r Rect, width int) (Capture, e
 	if r.Width*r.Height > 40_000_000 {
 		return Capture{}, Fail("invalid_argument", "capture region exceeds 40 million pixels; provide a smaller region")
 	}
+	ReportStage(ctx, "capture_image")
 	source, err := screenshot.Capture(int(r.X), int(r.Y), int(r.Width), int(r.Height))
 	if err != nil {
 		return Capture{}, Fail("native_error", err.Error())
 	}
+	ReportStage(ctx, "capture_encode")
 	return encodeCapture(source, width)
 }
 func encodeCapture(source image.Image, width int) (Capture, error) {
@@ -486,6 +488,7 @@ func (b *winBackend) CaptureWindow(ctx context.Context, target Window, region Re
 	defer w.DeleteObject(w.HGDIOBJ(bitmap))
 	previous := w.SelectObject(dc, w.HGDIOBJ(bitmap))
 	defer w.SelectObject(dc, previous)
+	ReportStage(ctx, "capture_image")
 	if w.PrintWindow(h, dc, w.PRINT_WINDOW_FLAGS(w.PW_RENDERFULLCONTENT)) == 0 {
 		return Capture{}, Fail("native_error", "PrintWindow failed; no screen fallback was used")
 	}
@@ -504,6 +507,7 @@ func (b *winBackend) CaptureWindow(ctx context.Context, target Window, region Re
 			source.Pix[j], source.Pix[j+1], source.Pix[j+2], source.Pix[j+3] = pixels[i+2], pixels[i+1], pixels[i], 255
 		}
 	}
+	ReportStage(ctx, "capture_encode")
 	return encodeCapture(source, width)
 }
 func send(events []w.INPUT) error {

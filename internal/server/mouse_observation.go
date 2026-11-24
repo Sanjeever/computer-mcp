@@ -28,6 +28,7 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 		s.inputDelivered.Store(true)
 	}
 	// Native events can be queued before the application processes them.
+	desktop.ReportStage(ctx, "observation_delay")
 	select {
 	case <-ctx.Done():
 		return mouseObservationFailed(ctx.Err())
@@ -36,12 +37,14 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 	a := ObserveArgs{Desktop: source.Window == nil, Screenshot: options.Screenshot}
 	var target *desktop.Window
 	if a.Desktop {
+		desktop.ReportStage(ctx, "display_layout")
 		if err := checkDisplayLayout(s.backend, source.Displays); err != nil {
 			return mouseObservationFailed(err)
 		}
 		a.Region = &source.Region
 		a.MaxWidth = source.maxWidth
 	} else {
+		desktop.ReportStage(ctx, "window_list")
 		w, err := mouseObservationWindow(s.backend, *source.Window)
 		if err != nil {
 			return mouseObservationFailed(err)
@@ -67,9 +70,11 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 	}
 	var err error
 	if target == nil {
+		desktop.ReportStage(ctx, "display_layout")
 		err = checkDisplayLayout(s.backend, source.Displays)
 	} else {
 		var current desktop.Window
+		desktop.ReportStage(ctx, "window_list")
 		current, err = mouseObservationWindow(s.backend, *source.Window)
 		if err == nil && (current.ID != target.ID || current.Bounds != target.Bounds || current.OwnerID != target.OwnerID) {
 			err = desktop.Fail("stale_snapshot", "target changed during follow-up observation")

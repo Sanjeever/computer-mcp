@@ -349,7 +349,7 @@ func TestCloseCancelsActiveWorker(t *testing.T) {
 	cleaned := make(chan struct{})
 	result := make(chan response, 1)
 	go func() {
-		result <- e.call(context.Background(), func(ctx context.Context, _ *state) response {
+		result <- e.call(context.Background(), "probe", func(ctx context.Context, _ *state) response {
 			close(started)
 			<-ctx.Done()
 			close(cleaned)

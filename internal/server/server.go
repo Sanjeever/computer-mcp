@@ -10,9 +10,10 @@ import (
 )
 
 type toolFailure struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Detail  string `json:"detail,omitempty"`
+	Code    string       `json:"code"`
+	Message string       `json:"message"`
+	Detail  string       `json:"detail,omitempty"`
+	Timing  *stageTiming `json:"timing,omitempty"`
 }
 
 func New(version string, c i18n.Catalog, e *Engine) *mcp.Server {
@@ -41,20 +42,20 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 		}
 	}
 	mcp.AddTool(s, &mcp.Tool{Name: name, Description: c.Text(name), InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly}}, func(ctx context.Context, _ *mcp.CallToolRequest, a A) (*mcp.CallToolResult, any, error) {
-		r := e.call(ctx, func(ctx context.Context, s *state) response { return f(ctx, s, a) })
+		r := e.call(ctx, name, func(ctx context.Context, s *state) response { return f(ctx, s, a) })
 		if r.err != nil {
 			code, detail := errorCode(r.err)
 			message := c.Text(code)
 			if readOnly && (code == "timeout" || code == "canceled") {
 				message = c.Text(code + "_read_only")
 			}
-			v := toolFailure{Code: code, Message: message, Detail: detail}
+			v := toolFailure{Code: code, Message: message, Detail: detail, Timing: r.timing}
 			data, _ := json.Marshal(v)
 			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
 		}
 		if v, ok := r.value.(mouseObservationResult); ok && v.err != nil {
 			code, detail := errorCode(v.err)
-			v.ObservationError = &toolFailure{Code: code, Message: c.Text("input_observation_failed"), Detail: detail}
+			v.ObservationError = &toolFailure{Code: code, Message: c.Text("input_observation_failed"), Detail: detail, Timing: r.timing}
 			r.value = v
 		}
 		data, err := json.Marshal(r.value)
