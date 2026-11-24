@@ -198,7 +198,7 @@ func startWindowsFixture(t *testing.T) (Backend, windowsFixture) {
 			t.Fatal(code)
 		}
 		point := winRect(rect).Center()
-		if err := b.CheckPoint(fixture.Window, point); err != nil {
+		if err := b.CheckPoint(fixture.Window, point, false); err != nil {
 			t.Fatalf("fixture setup click rejected: %v", err)
 		}
 		// Explicit test setup touches only the verified fixture, never another application.
@@ -390,7 +390,7 @@ func TestNativeWindowsMouse(t *testing.T) {
 		t.Fatal(code)
 	}
 	p := winRect(rect).Center()
-	if err := b.CheckPoint(fixture.Window, p); err != nil {
+	if err := b.CheckPoint(fixture.Window, p, false); err != nil {
 		t.Fatal(err)
 	}
 	check := func(want string) {

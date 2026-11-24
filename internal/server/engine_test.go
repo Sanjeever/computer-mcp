@@ -73,7 +73,7 @@ func (b *fakeDesktop) CaptureWindow(context.Context, desktop.Window, desktop.Rec
 	b.captureMode = "window"
 	return desktop.Capture{Data: []byte("test-image"), Width: 500, Height: 250}, b.err
 }
-func (b *fakeDesktop) CheckPoint(_ desktop.Window, p desktop.Point) error {
+func (b *fakeDesktop) CheckPoint(_ desktop.Window, p desktop.Point, _ bool) error {
 	b.pointChecks = append(b.pointChecks, p)
 	if b.pointFailAt > 0 && len(b.pointChecks) == b.pointFailAt {
 		return desktop.Fail("target_obscured", "intermediate point")

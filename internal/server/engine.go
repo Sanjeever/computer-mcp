@@ -659,7 +659,7 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 		return response{err: err}
 	}
 	if snap.Window != nil {
-		if err := s.backend.CheckPoint(*snap.Window, p); err != nil {
+		if err := s.backend.CheckPoint(*snap.Window, p, a.Point != nil && snap.CaptureMode == "screen"); err != nil {
 			return response{err: err}
 		}
 	}
@@ -701,7 +701,7 @@ func move(ctx context.Context, s *state, a MoveArgs) response {
 		return response{err: err}
 	}
 	if snap.Window != nil {
-		if err := s.backend.CheckPoint(*snap.Window, p); err != nil {
+		if err := s.backend.CheckPoint(*snap.Window, p, snap.CaptureMode == "screen"); err != nil {
 			return response{err: err}
 		}
 	}
@@ -770,7 +770,7 @@ func scroll(ctx context.Context, s *state, a ScrollArgs) response {
 		return response{err: err}
 	}
 	if snap.Window != nil {
-		if err := s.backend.CheckPoint(*snap.Window, p); err != nil {
+		if err := s.backend.CheckPoint(*snap.Window, p, false); err != nil {
 			return response{err: err}
 		}
 	}
@@ -817,7 +817,7 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 			if err := ctx.Err(); err != nil {
 				return response{err: err}
 			}
-			if err := s.backend.CheckPoint(*snap.Window, point); err != nil {
+			if err := s.backend.CheckPoint(*snap.Window, point, false); err != nil {
 				return response{err: err}
 			}
 		}

@@ -1,10 +1,23 @@
 #import <Cocoa/Cocoa.h>
 
 @interface FixtureCanvas : NSView
+@property(assign) NSTextField *field;
 @end
 @implementation FixtureCanvas
 - (BOOL)isAccessibilityElement { return YES; }
 - (NSString *)accessibilityRole { return NSAccessibilityImageRole; }
+- (NSString *)accessibilityLabel { return @"Fixture context target"; }
+- (NSMenu *)menuForEvent:(NSEvent *)event {
+    NSMenu *menu = [[[NSMenu alloc] initWithTitle:@"Fixture context"] autorelease];
+    NSMenuItem *item = [menu addItemWithTitle:@"Fixture context action" action:@selector(contextAction:) keyEquivalent:@""];
+    item.target = self;
+    NSMenuItem *more = [menu addItemWithTitle:@"Fixture submenu" action:nil keyEquivalent:@""];
+    more.submenu = [[[NSMenu alloc] initWithTitle:more.title] autorelease];
+    item = [more.submenu addItemWithTitle:@"Fixture submenu action" action:@selector(contextAction:) keyEquivalent:@""];
+    item.target = self;
+    return menu;
+}
+- (void)contextAction:(NSMenuItem *)sender { self.field.stringValue = sender.title; }
 - (void)drawRect:(NSRect)dirtyRect {
     [NSColor.whiteColor setFill];
     NSRectFill(self.bounds);
@@ -79,7 +92,9 @@
     NSButton *cover = [NSButton buttonWithTitle:@"Fixture cover" target:self action:@selector(showCover:)];
     cover.frame = NSMakeRect(300, 100, 200, 40);
     [self.window.contentView addSubview:cover];
-    [self.window.contentView addSubview:[[FixtureCanvas alloc] initWithFrame:NSMakeRect(40, 30, 500, 45)]];
+    FixtureCanvas *canvas = [[FixtureCanvas alloc] initWithFrame:NSMakeRect(40, 30, 500, 45)];
+    canvas.field = self.field;
+    [self.window.contentView addSubview:canvas];
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(40, 0, 500, 25)];
     NSTableView *table = [[NSTableView alloc] initWithFrame:scroll.bounds];
     NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:@"file"];
@@ -118,11 +133,18 @@
     self.palette.floatingPanel = YES;
     self.palette.becomesKeyOnlyIfNeeded = YES;
     NSButton *button = [NSButton buttonWithTitle:@"Palette action" target:self action:@selector(paletteClick:)];
-    button.frame = NSMakeRect(20, 25, 140, 40);
+    button.frame = NSMakeRect(20, 52, 140, 40);
     [self.palette.contentView addSubview:button];
+    NSPopUpButton *mode = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(20, 15, 140, 30) pullsDown:NO];
+    mode.accessibilityLabel = @"Fixture color mode";
+    [mode addItemsWithTitles:@[@"RGB sliders", @"Grayscale sliders"]];
+    mode.target = self;
+    mode.action = @selector(changeColorMode:);
+    [self.palette.contentView addSubview:mode];
     [self.palette orderFront:nil];
 }
 - (void)paletteClick:(id)sender { self.field.stringValue = @"palette clicked"; }
+- (void)changeColorMode:(NSPopUpButton *)sender { self.field.stringValue = sender.titleOfSelectedItem; }
 - (void)showEditor:(id)sender {
     self.editorWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(250, 200, 600, 500)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable

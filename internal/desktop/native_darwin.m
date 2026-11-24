@@ -476,6 +476,28 @@ static CGEventFlags keyFlags(NSArray *keys) {
     }
     return flags;
 }
+static BOOL isMenuRole(NSString *role) {
+    return [role isEqualToString:(id)kAXMenuRole] || [role isEqualToString:(id)kAXMenuItemRole];
+}
+
+static BOOL menuBelongsToWindow(AXUIElementRef item, AXUIElementRef window) {
+    // A menu may have no AXWindow of its own. Require its AX parent chain to
+    // reach the window or a control explicitly belonging to that window.
+    for (int depth = 0; depth < 8; depth++) {
+        AXUIElementRef parent = (AXUIElementRef)attr(item, kAXParentAttribute);
+        if (!parent || CFGetTypeID(parent) != AXUIElementGetTypeID() || CFEqual(parent, item))
+            return NO;
+        AXUIElementSetMessagingTimeout(parent, 0.15);
+        id owner = attr(parent, kAXWindowAttribute);
+        if (CFEqual(parent, window) || (owner && CFEqual((CFTypeRef)owner, window)))
+            return YES;
+        if (!isMenuRole(text(attr(parent, kAXRoleAttribute))))
+            return NO;
+        item = parent;
+    }
+    return NO;
+}
+
 static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
     if ([op isEqualToString:@"status"]) {
         CGDirectDisplayID ids[32];
@@ -534,12 +556,48 @@ static NSDictionary *dispatch(NSString *op, NSDictionary *args) {
         AXError status = AXUIElementCopyElementAtPosition(system, [args[@"x"] floatValue],
                                                          [args[@"y"] floatValue], &hit);
         CFRelease(system);
-        if (status != kAXErrorSuccess || !hit)
-            return failure(@"target_obscured", @"cannot verify window at input point");
+        if (status != kAXErrorSuccess || !hit) {
+            if (hit) CFRelease(hit);
+            return failure(@"target_obscured", [NSString stringWithFormat:@"reason=unverified_point; ax_error=%d", status]);
+        }
+        AXUIElementSetMessagingTimeout(hit, 0.15);
         id owner = attr(hit, kAXWindowAttribute);
         BOOL matches = CFEqual(hit, w) || (owner && CFEqual((CFTypeRef)owner, w));
+        NSDictionary *result = @{};
+        if (!matches) {
+            NSString *role = text(attr(hit, kAXRoleAttribute));
+            pid_t targetPID = 0, hitPID = 0;
+            AXUIElementGetPid(w, &targetPID);
+            AXUIElementGetPid(hit, &hitPID);
+            NSString *windowID = nil;
+            for (NSString *key in windows) {
+                if (CFEqual(hit, (CFTypeRef)windows[key]) || (owner && CFEqual((CFTypeRef)owner, windows[key]))) {
+                    windowID = key;
+                    break;
+                }
+            }
+            NSString *reason = @"unverified_window";
+            if (windowID || (hitPID > 0 && hitPID != targetPID)) {
+                reason = @"other_window";
+            } else if (hitPID > 0 && hitPID == targetPID && isMenuRole(role)) {
+                BOOL owned = menuBelongsToWindow(hit, w);
+                if ([args[@"allow_menu"] boolValue] && owned) {
+                    CFRelease(hit);
+                    return @{};
+                }
+                reason = owned ? @"menu_requires_screen_point" : @"unverified_menu";
+            } else if (owner) {
+                reason = @"other_window";
+            }
+            NSString *detail = [NSString stringWithFormat:@"reason=%@", reason];
+            if (role.length)
+                detail = [detail stringByAppendingFormat:@"; hit_role=%@", role];
+            if (windowID)
+                detail = [detail stringByAppendingFormat:@"; hit_window_id=%@", windowID];
+            result = failure(@"target_obscured", detail);
+        }
         CFRelease(hit);
-        return matches ? @{} : failure(@"target_obscured", @"input point belongs to another window");
+        return result;
     }
     if ([op isEqualToString:@"window"]) {
         AXUIElementRef w = windowRef(args[@"window_id"]);

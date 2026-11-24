@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestNativeImageCoordinates(t *testing.T) {
 	if !status.Accessibility || !status.ScreenCapture {
 		t.Skipf("native coordinates require Accessibility and Screen Recording (accessibility=%t, screen_capture=%t)", status.Accessibility, status.ScreenCapture)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	binary := filepath.Join(t.TempDir(), "fixture")
 	compile := exec.CommandContext(ctx, "clang", "-framework", "Cocoa", "../desktop/testdata/window.m", "-o", binary)
@@ -236,6 +237,43 @@ func TestNativeImageCoordinates(t *testing.T) {
 	if t.Failed() {
 		return
 	}
+	t.Run("context menu and submenu", func(t *testing.T) {
+		if r := observe(ctx, s, ObserveArgs{WindowID: target.ID, Screenshot: true}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		source := s.snapshot
+		var canvas desktop.Element
+		for _, e := range source.Elements {
+			if e.Name == "Fixture context target" {
+				canvas = e
+				break
+			}
+		}
+		if canvas.ID == "" {
+			t.Fatal("context target missing")
+		}
+		p := desktop.Point{X: canvas.Bounds.X + 120, Y: canvas.Bounds.Center().Y}
+		anchor := desktop.Point{
+			X: (p.X - source.Region.X) * float64(source.ImageWidth) / source.Region.Width,
+			Y: (p.Y - source.Region.Y) * float64(source.ImageHeight) / source.Region.Height,
+		}
+		if r := click(ctx, s, ClickArgs{SnapshotID: source.ID, Point: &anchor, Button: "right"}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		region := desktop.Rect{X: p.X - 20, Y: p.Y - 30, Width: 440, Height: source.Window.Bounds.Y + source.Window.Bounds.Height - (p.Y - 30)}
+		submenu := fixtureMenuPoint(t, ctx, s, target.ID, &region, "Fixture submenu")
+		if r := move(ctx, s, MoveArgs{SnapshotID: s.snapshot.ID, Point: submenu, Hover: 450}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		item := fixtureMenuPoint(t, ctx, s, target.ID, &region, "Fixture submenu action")
+		if r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, Point: &item}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		requireFixtureValue(t, ctx, s, target.ID, "Fixture submenu action")
+	})
+	if t.Failed() {
+		return
+	}
 	t.Run("floating panel", func(t *testing.T) {
 		if r := observe(ctx, s, ObserveArgs{WindowID: target.ID}); r.err != nil {
 			t.Fatal(r.err)
@@ -297,6 +335,26 @@ func TestNativeImageCoordinates(t *testing.T) {
 		if r := window(ctx, s, WindowArgs{Action: "activate", WindowID: palette.ID}); r.err != nil {
 			t.Fatal(r.err)
 		}
+		if r := observe(ctx, s, ObserveArgs{WindowID: palette.ID}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		var mode desktop.Element
+		for _, e := range s.snapshot.Elements {
+			if e.Role == "AXPopUpButton" {
+				mode = e
+			}
+		}
+		if mode.ID == "" {
+			t.Fatal("color mode control missing")
+		}
+		if r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, ElementID: mode.ID}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		item := fixtureMenuPoint(t, ctx, s, palette.ID, nil, "Grayscale sliders")
+		if r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, Point: &item}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		requireFixtureValue(t, ctx, s, target.ID, "Grayscale sliders")
 	})
 	if t.Failed() {
 		return
@@ -354,4 +412,37 @@ func TestNativeImageCoordinates(t *testing.T) {
 			}()
 		}
 	})
+}
+
+func fixtureMenuPoint(t *testing.T, ctx context.Context, s *state, windowID string, region *desktop.Rect, label string) desktop.Point {
+	t.Helper()
+	for range 3 {
+		r := observe(ctx, s, ObserveArgs{WindowID: windowID, Screenshot: true, CaptureMode: "screen", OCR: true, Region: region})
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		for _, entry := range s.snapshot.OCR {
+			if strings.EqualFold(entry.Text, label) {
+				return entry.Bounds.Center()
+			}
+		}
+	}
+	t.Fatalf("menu item %q missing from fixture screenshot: %+v", label, s.snapshot.OCR)
+	return desktop.Point{}
+}
+
+func requireFixtureValue(t *testing.T, ctx context.Context, s *state, windowID, value string) {
+	t.Helper()
+	for range 20 {
+		if r := observe(ctx, s, ObserveArgs{WindowID: windowID, Text: value}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		for _, e := range s.snapshot.Elements {
+			if e.Name == "Fixture input" && e.Value == value {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("fixture did not report %q", value)
 }

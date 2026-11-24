@@ -46,7 +46,7 @@ pnpm pack:check
 [CI](../.github/workflows/ci.yml) 在两个支持平台上执行检查和安装包冒烟测试，再上传已验证的 tarball。托管 runner 不验证 macOS 授权、签名升级或任意应用交互。
 
 - [服务端测试](../internal/server/) 覆盖快照失效、坐标映射、焦点与输入校验、取消、密码省略、OCR、差异及 MCP 契约，涉及桌面交互时使用假后端。[翻译测试](../internal/i18n/i18n_test.go) 检查语言键一致性，[启动器测试](../src/launcher.test.ts) 检查平台选择与缺少平台包的错误。
-- [桌面夹具测试](../internal/desktop/integration_darwin_test.go) 覆盖 macOS 原生输入、窗口身份、文本提取、截图与 OCR。[服务端夹具测试](../internal/server/coordinates_darwin_test.go) 验证实际 JPEG 目标上的点击、缩放或裁剪图像与移动窗口后的后续截图，以及浮动面板、按住键点击、连续拖动、取消清理和真实 stdio 截图。
+- [桌面夹具测试](../internal/desktop/integration_darwin_test.go) 覆盖 macOS 原生输入、窗口身份、遮挡、文本提取、截图与 OCR。[服务端夹具测试](../internal/server/coordinates_darwin_test.go) 验证图片坐标点击、点击和拖动后的后续截图、缩放与裁剪、窗口移动、右键菜单和二级菜单、浮动面板的颜色模式弹层、按住键点击、取消清理和真实 stdio 截图。
 - [Windows 夹具测试](../internal/desktop/integration_windows_test.go) 使用专用 Edit 和 RichEdit 控件，覆盖 Unicode、多行输入、UIA 值与焦点、原生激活、鼠标移动、按住键点击/滚动/拖动，以及取消拖动后的按键与鼠标释放。stdio 用例打开和关闭所属对话框，直接使用每次点击返回的快照继续操作。[截图测试](../internal/desktop/capture_windows_test.go) 无需桌面即可检查 JPEG 尺寸，并在交互夹具中验证 PrintWindow 与屏幕截图的裁剪和缩放。RichEdit 的 UIA 值使用 CR 分隔段落，并包含末尾段落标记，不一定与应用保存文件的换行格式一致。
 
 原生 UI 验收应在交互式会话中使用专用测试窗口，覆盖 Unicode 输入、点击、键盘选择、滚动、拖动、截图、焦点拒绝及失效引用。多种缩放比例与副显示器须分别验证后，才能宣称相应配置已验证。不要在自动化测试中向个人应用发送输入。

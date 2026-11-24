@@ -200,7 +200,7 @@ func TestNativeFixture(t *testing.T) {
 		}
 		for _, n := range nodes {
 			if n.Name == name {
-				if err := b.CheckPoint(target, n.Bounds.Center()); err != nil {
+				if err := b.CheckPoint(target, n.Bounds.Center(), false); err != nil {
 					t.Fatal(err)
 				}
 				if err := b.Input(ctx, "click", Input{Point: n.Bounds.Center(), Button: "left", Count: 1}); err != nil {
@@ -372,7 +372,7 @@ func TestNativeFixture(t *testing.T) {
 	}
 	for _, n := range nodes {
 		if n.Name == "Fixture cover" {
-			if err := b.CheckPoint(target, n.Bounds.Center()); err != nil {
+			if err := b.CheckPoint(target, n.Bounds.Center(), false); err != nil {
 				t.Fatal(err)
 			}
 			if err := b.Input(ctx, "click", Input{Point: n.Bounds.Center(), Button: "left", Count: 1}); err != nil {
@@ -399,8 +399,8 @@ func TestNativeFixture(t *testing.T) {
 	if !cover.Active {
 		t.Fatal("dedicated cover did not become active")
 	}
-	if err := b.CheckPoint(target, target.Bounds.Center()); err == nil {
-		t.Fatal("obscured mouse target accepted")
+	if err := b.CheckPoint(target, target.Bounds.Center(), true); err == nil || !strings.Contains(err.Error(), "hit_window_id="+cover.ID) {
+		t.Fatalf("obscured mouse target: %v", err)
 	}
 	windowCapture, err := b.CaptureWindow(ctx, target, target.Bounds, 600)
 	if err != nil {

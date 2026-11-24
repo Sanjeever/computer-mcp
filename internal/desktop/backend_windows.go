@@ -438,7 +438,7 @@ func encodeCapture(source image.Image, width int) (Capture, error) {
 	}
 	return Capture{output.Bytes(), ow, oh}, nil
 }
-func (b *winBackend) CheckPoint(target Window, p Point) error {
+func (b *winBackend) CheckPoint(target Window, p Point, _ bool) error {
 	h, err := hwnd(target.ID)
 	if err != nil {
 		return err
