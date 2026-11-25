@@ -445,11 +445,18 @@ func (b *winBackend) CheckPoint(target Window, p Point, _ bool) error {
 	if err != nil {
 		return err
 	}
-	hit := w.WindowFromPoint(w.POINT{X: int32(p.X), Y: int32(p.Y)})
-	if hit == 0 || w.GetAncestor(hit, w.GA_ROOT) != h {
-		return Fail("target_obscured", "input point belongs to another window")
+	point := w.POINT{X: int32(p.X), Y: int32(p.Y)}
+	hit := w.WindowFromPoint(point)
+	root := w.GetAncestor(hit, w.GA_ROOT)
+	if root == h {
+		return nil
 	}
-	return nil
+	detail := fmt.Sprintf("target_window_id=%s; desktop_point=(%d,%d)", target.ID, point.X, point.Y)
+	if hit == 0 || root == 0 {
+		return Fail("target_obscured", "reason=no_window_at_point; "+detail)
+	}
+	owner, _ := w.GetWindow(root, w.GW_OWNER)
+	return Fail("target_obscured", fmt.Sprintf("reason=other_window_at_point; %s; hit_window_id=%s; hit_root_window_id=%s; hit_owner_window_id=%s", detail, windowID(hit), windowID(root), windowID(owner)))
 }
 func (b *winBackend) Recognize(context.Context, Capture, int) ([]RecognizedText, bool, error) {
 	return nil, false, Fail("unsupported_operation", "OCR is available on macOS; this Windows distribution has no MSIX package identity")

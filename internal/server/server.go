@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 
 	"github.com/Sanjeever/computer-mcp/internal/i18n"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -48,6 +49,9 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 			message := c.Text(code)
 			if readOnly && (code == "timeout" || code == "canceled") {
 				message = c.Text(code + "_read_only")
+			}
+			if runtime.GOOS == "windows" && code == "target_obscured" {
+				message = c.Text("target_obscured_windows")
 			}
 			v := toolFailure{Code: code, Message: message, Detail: detail, Timing: r.timing}
 			data, _ := json.Marshal(v)
