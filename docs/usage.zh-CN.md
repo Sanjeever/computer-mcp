@@ -124,7 +124,7 @@ Windows 可能拒绝前台激活。此时返回 `activation_failed`，并在能�
 
 传入最新一次成功观察的 `since_snapshot_id` 可获取差异，要求该观察为窗口模式，且窗口、筛选条件、元素预算及 OCR 设置相同。输入消耗可操作引用后，该观察仍可作为差异基准。此时 `elements` 包含新增和变化节点，移除 `removed_element_ids` 后按 `element_order` 重建当前有界结果。`diff_complete:false` 表示至少一次观察发生截断，节点从结果消失不代表从应用消失。后续操作均须使用新 `snapshot_id`，未变化的元素也一样。原生身份变化表示为删除和新增。差异减少响应大小，不减少原生遍历工作。
 
-macOS 可通过 `ocr:true` 对返回截图执行本地 Vision 识别，窗口观察需同时设置 `screenshot:true`。结果包含受 `max_elements` 限制的 `ocr` 文本区域、置信度和图片坐标，超出预算时标记 `ocr_truncated`。窗口捕获模式下，无名称且无 AX 值的控件可获得 `ocr_text`，原生名称和点击校验保持独立。屏幕截图中的文字可能来自覆盖窗口，因此以独立 OCR 区域返回。OCR 结果会省略与语义结果中密码控件相交的文本；其他可见敏感文本仍可能出现，尤其是纯截图或筛选观察。OCR 按需启用，会增加识别耗时，不上传图片。`computer_status.ocr` 表示支持状态，当前 npm Windows 分发版请求 OCR 会返回 `unsupported_operation`。
+macOS 可通过 `ocr:true` 对返回截图执行本地 Vision 识别，启用英文和简体中文，窗口观察需同时设置 `screenshot:true`。结果包含受 `max_elements` 限制的 `ocr` 文本区域、置信度和图片坐标，超出预算时标记 `ocr_truncated`。窗口捕获模式下，无名称且无 AX 值的控件可获得 `ocr_text`，原生名称和点击校验保持独立。屏幕截图中的文字可能来自覆盖窗口，因此以独立 OCR 区域返回。OCR 结果会省略与语义结果中密码控件相交的文本；其他可见敏感文本仍可能出现，尤其是纯截图或筛选观察。OCR 按需启用，会增加识别耗时，不上传图片。`computer_status.ocr` 表示支持状态，当前 npm Windows 分发版请求 OCR 会返回 `unsupported_operation`。
 
 ## 限制与行为
 

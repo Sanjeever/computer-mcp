@@ -14,8 +14,9 @@ char *cm_recognize(const unsigned char *bytes, size_t length, int limit) {
         VNRecognizeTextRequest *request = [VNRecognizeTextRequest new];
         request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
         request.usesLanguageCorrection = NO;
-        request.automaticallyDetectsLanguage = YES;
-        request.recognitionLanguages = @[@"en-US", @"zh-Hans"];
+        // Use the configured bilingual model even when most of the screen is English.
+        request.automaticallyDetectsLanguage = NO;
+        request.recognitionLanguages = @[@"zh-Hans", @"en-US"];
         NSError *error = nil;
         NSDictionary *result;
         if (![handler performRequests:@[request] error:&error]) {
