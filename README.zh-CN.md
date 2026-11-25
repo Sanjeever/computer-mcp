@@ -6,6 +6,18 @@
 
 支持 **macOS 14+ Apple Silicon** 和 **Windows 10/11 x64**。桌面交互需要用户已登录图形会话。npm 启动器的 Node.js 要求见 [`package.json`](package.json) 中的 `engines`。
 
+## 用无边记画一张明信片
+
+Codex 使用 GPT-6.2-Sol（high），通过 Computer MCP 操作 macOS「无边记」，为一位未曾谋面的收件人画了这张明信片。
+
+![明信片「愿你一路有光」，画着海边的灯塔和橙色月亮](docs/images/freeform-postcard.png)
+
+原始提示词
+
+> 打开 macOS 的「无边记」，画一张你愿意送给陌生人的明信片。题材和画法都由你决定。
+>
+> 请不要调整「无边记」的窗口大小。
+
 ## 接入
 
 使用已发布的 npm 包时，在支持 `mcpServers` 的客户端中添加以下配置。

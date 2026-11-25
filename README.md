@@ -6,6 +6,18 @@ Native computer use for AI agents over stdio MCP. Go implements desktop observat
 
 Supports **macOS 14+ on Apple Silicon** and **Windows 10/11 x64**. Desktop interaction requires a logged-in graphical session. The npm launcher's Node.js requirement is in [`package.json`](package.json) under `engines`.
 
+## Drawing a postcard in Freeform
+
+Codex used GPT-6.2-Sol (high) and Computer MCP to draw this postcard for a stranger in Freeform on macOS.
+
+![Illustrated postcard with a lighthouse and an orange moon over the sea, captioned “May you have light along the way”](docs/images/freeform-postcard.png)
+
+Prompt translated from Chinese
+
+> Open Freeform on macOS and draw a postcard you would like to give to a stranger. You decide what to draw and how to draw it.
+>
+> Please do not resize the Freeform window.
+
 ## Connect
 
 To use the published npm package, configure a client that accepts `mcpServers`.
