@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/jpeg"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -23,10 +24,11 @@ import (
 )
 
 type winBackend struct {
-	automation *w.IUIAutomation
-	walker     *w.IUIAutomationTreeWalker
-	cache      *w.IUIAutomationCacheRequest
-	elements   map[string]*w.IUIAutomationElement
+	automation        *w.IUIAutomation
+	walker            *w.IUIAutomationTreeWalker
+	cache             *w.IUIAutomationCacheRequest
+	elements          map[string]*w.IUIAutomationElement
+	logUIADiagnostics bool
 }
 
 func hr(code w.HRESULT) error {
@@ -39,7 +41,7 @@ func New() (Backend, error) {
 	if err := hr(w.CoInitializeEx(nil, w.COINIT_MULTITHREADED)); err != nil {
 		return nil, err
 	}
-	b := &winBackend{}
+	b := &winBackend{logUIADiagnostics: os.Getenv("COMPUTER_MCP_UIA_DIAGNOSTICS") == "1"}
 	fail := func(err error) (Backend, error) { b.Close(); return nil, err }
 	w.SetProcessDpiAwarenessContext(w.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
 	clsid := syscall.GUID{Data1: 0xe22ad333, Data2: 0xb25f, Data3: 0x460c, Data4: [8]byte{0x83, 0xd0, 0x05, 0x81, 0x10, 0x73, 0x95, 0xc9}}
@@ -321,6 +323,12 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 	b.elements = map[string]*w.IUIAutomationElement{}
 	out := []Element{}
 	var truncated Truncation
+	providerError := func(operation string, err error) {
+		if b.logUIADiagnostics && truncated&TruncatedProviderError == 0 {
+			fmt.Fprintf(os.Stderr, "computer-mcp uia_traversal operation=%s error=%q\n", operation, err.Error())
+		}
+		truncated |= TruncatedProviderError
+	}
 	deadline := time.Now().Add(3 * time.Second)
 	visited := map[string]bool{}
 	scanned := 0
@@ -343,7 +351,7 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 		scanned++
 		id, err := runtimeID(e)
 		if err != nil {
-			truncated |= TruncatedProviderError
+			providerError("runtime_id", err)
 			return
 		}
 		if visited[id] {
@@ -352,7 +360,7 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 		visited[id] = true
 		n, err := cachedNode(e, id, parent)
 		if err != nil {
-			truncated |= TruncatedProviderError
+			providerError("cached_properties", err)
 		} else if options.Includes(n) {
 			e.AddRef()
 			b.elements[id] = e
@@ -360,8 +368,8 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 			parent = id
 		}
 		var child *w.IUIAutomationElement
-		if b.walker.GetFirstChildElementBuildCache(e, b.cache, &child) < 0 {
-			truncated |= TruncatedProviderError
+		if err := hr(b.walker.GetFirstChildElementBuildCache(e, b.cache, &child)); err != nil {
+			providerError("first_child", err)
 			return
 		}
 		for child != nil {
@@ -378,8 +386,8 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 			var next *w.IUIAutomationElement
 			code := b.walker.GetNextSiblingElementBuildCache(child, b.cache, &next)
 			child.Release()
-			if code < 0 {
-				truncated |= TruncatedProviderError
+			if err := hr(code); err != nil {
+				providerError("next_sibling", err)
 				return
 			}
 			child = next
