@@ -216,6 +216,17 @@ func findWindow(b desktop.Backend, id string, active bool) (desktop.Window, erro
 	return desktop.Window{}, desktop.Fail("window_not_found", id)
 }
 func (s *state) current(id string) (*Snapshot, error) {
+	snap, err := s.latestSnapshot(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validateSnapshotTarget(snap); err != nil {
+		return nil, err
+	}
+	return snap, nil
+}
+
+func (s *state) latestSnapshot(id string) (*Snapshot, error) {
 	snap := s.snapshot
 	if snap == nil {
 		return nil, desktop.Fail("stale_snapshot", "no current snapshot; input, wait, window mutations and failed observations invalidate snapshots")
@@ -227,34 +238,35 @@ func (s *state) current(id string) (*Snapshot, error) {
 		}
 		return nil, desktop.Fail("stale_snapshot", "latest observation is "+target+"; earlier snapshots are invalid")
 	}
+	return snap, nil
+}
+
+func (s *state) validateSnapshotTarget(snap *Snapshot) error {
 	if snap.expired() {
-		return nil, desktop.Fail("stale_snapshot", "snapshot exceeded its 60-second lifetime at "+snap.ExpiresAt.Format(time.RFC3339Nano))
+		return desktop.Fail("stale_snapshot", "snapshot exceeded its 60-second lifetime at "+snap.ExpiresAt.Format(time.RFC3339Nano))
 	}
 	if snap.Window == nil {
-		if err := checkDisplayLayout(s.backend, snap.Displays); err != nil {
-			return nil, err
-		}
-		return snap, nil
+		return checkDisplayLayout(s.backend, snap.Displays)
 	}
 	if snap.Window.Menu {
 		menu, _ := observeMenu(s.backend, *snap.Window)
 		if menu.ID != snap.Window.ID || menu.Bounds != snap.Window.Bounds {
-			return nil, desktop.Fail("stale_snapshot", "menu identity or geometry changed")
+			return desktop.Fail("stale_snapshot", "menu identity or geometry changed")
 		}
-		return snap, nil
+		return nil
 	}
 	w, err := findWindow(s.backend, snap.Window.ID, true)
 	var de *desktop.Error
 	if err != nil && !(errors.As(err, &de) && de.Code == "not_active" && w.MouseActive) {
-		return nil, err
+		return err
 	}
 	if w.PID != snap.Window.PID || w.Bounds != snap.Window.Bounds {
-		return nil, desktop.Fail("stale_snapshot", "window geometry changed")
+		return desktop.Fail("stale_snapshot", "window geometry changed")
 	}
 	if w.OwnerID != snap.Window.OwnerID {
-		return nil, desktop.Fail("stale_snapshot", "window ownership changed")
+		return desktop.Fail("stale_snapshot", "window ownership changed")
 	}
-	return snap, nil
+	return nil
 }
 func imagePoint(s *Snapshot, p desktop.Point) (desktop.Point, error) {
 	if s.ImageWidth == 0 || s.ImageHeight == 0 {
@@ -897,7 +909,7 @@ func scroll(ctx context.Context, s *state, a ScrollArgs) response {
 func drag(ctx context.Context, s *state, a DragArgs) response {
 	path := a.Path
 	if path != nil {
-		if a.From != nil || a.To != nil || len(path) < 2 || len(path) > 128 {
+		if a.From != nil || a.To != nil {
 			return invalid("provide either from and to, or path with 2..128 image points")
 		}
 	} else {
@@ -906,11 +918,9 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 		}
 		path = []desktop.Point{*a.From, *a.To}
 	}
-	if a.Duration == 0 {
-		a.Duration = 500
-	}
-	if a.Duration < 100 || a.Duration > 3000 {
-		return invalid("duration_ms: 100..3000")
+	duration, err := dragDuration(path, a.Duration)
+	if err != nil {
+		return response{err: err}
 	}
 	snap, err := s.mouseSnapshot(a.SnapshotID, a.HoldKeys)
 	if err != nil {
@@ -919,36 +929,62 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 	if err := a.ObserveAfter.validate(snap); err != nil {
 		return response{err: err}
 	}
-	points := make([]desktop.Point, len(path))
-	for i, point := range path {
-		if err := ctx.Err(); err != nil {
-			return response{err: err}
-		}
-		points[i], err = imagePoint(snap, point)
-		if err != nil {
-			return response{err: err}
-		}
+	points, err := mapDragPath(ctx, snap, path)
+	if err != nil {
+		return response{err: err}
 	}
-	if snap.Window != nil {
-		for _, point := range points {
-			if err := ctx.Err(); err != nil {
-				return response{err: err}
-			}
-			if err := s.backend.CheckPoint(*snap.Window, point, false); err != nil {
-				return response{err: err}
-			}
-		}
-	}
-	if err := ctx.Err(); err != nil {
+	if err := checkDragPath(ctx, s.backend, snap.Window, points); err != nil {
 		return response{err: err}
 	}
 	s.snapshot = nil
 	desktop.ReportStage(ctx, "input")
-	err = s.backend.Input(ctx, "drag", desktop.Input{Path: points, Duration: a.Duration, HoldKeys: a.HoldKeys})
+	err = s.backend.Input(ctx, "drag", desktop.Input{Path: points, Duration: duration, HoldKeys: a.HoldKeys})
 	if err != nil || a.ObserveAfter == nil {
 		return delivered(err)
 	}
 	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter, s.confirmMouseInput(nil))
+}
+
+func dragDuration(path []desktop.Point, duration int) (int, error) {
+	if len(path) < 2 || len(path) > 128 {
+		return 0, desktop.Fail("invalid_argument", "provide either from and to, or path with 2..128 image points")
+	}
+	if duration == 0 {
+		return 500, nil
+	}
+	if duration < 100 || duration > 3000 {
+		return 0, desktop.Fail("invalid_argument", "duration_ms: 100..3000")
+	}
+	return duration, nil
+}
+
+func mapDragPath(ctx context.Context, snap *Snapshot, path []desktop.Point) ([]desktop.Point, error) {
+	points := make([]desktop.Point, len(path))
+	for i, point := range path {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		mapped, err := imagePoint(snap, point)
+		if err != nil {
+			return nil, err
+		}
+		points[i] = mapped
+	}
+	return points, nil
+}
+
+func checkDragPath(ctx context.Context, backend desktop.Backend, window *desktop.Window, points []desktop.Point) error {
+	if window != nil {
+		for _, point := range points {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := backend.CheckPoint(*window, point, false); err != nil {
+				return err
+			}
+		}
+	}
+	return ctx.Err()
 }
 func wait(ctx context.Context, s *state, a WaitArgs) response {
 	if a.WindowID == "" {
