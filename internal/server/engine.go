@@ -221,6 +221,13 @@ func (s *state) current(id string) (*Snapshot, error) {
 		}
 		return snap, nil
 	}
+	if snap.Window.Menu {
+		menu, _ := observeMenu(s.backend, *snap.Window)
+		if menu.ID != snap.Window.ID || menu.Bounds != snap.Window.Bounds {
+			return nil, desktop.Fail("stale_snapshot", "menu identity or geometry changed")
+		}
+		return snap, nil
+	}
 	w, err := findWindow(s.backend, snap.Window.ID, true)
 	var de *desktop.Error
 	if err != nil && !(errors.As(err, &de) && de.Code == "not_active" && w.MouseActive) {
@@ -528,6 +535,11 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	var w desktop.Window
 	if target != nil {
 		w = *target
+	} else if s.previous != nil && s.previous.Window != nil && s.previous.Window.Menu && a.WindowID == s.previous.Window.ID {
+		w, _ = observeMenu(s.backend, *s.previous.Window)
+		if w.ID != a.WindowID {
+			return response{err: desktop.Fail("stale_snapshot", "menu identity changed; observe its owner again")}
+		}
 	} else {
 		var err error
 		desktop.ReportStage(ctx, "window_list")
@@ -538,6 +550,12 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	}
 	if !w.Bounds.Valid() {
 		return invalid("window has no visible bounds")
+	}
+	if w.Menu && a.Screenshot {
+		if a.CaptureMode == "window" {
+			return invalid("menu screenshots require capture_mode=screen")
+		}
+		a.CaptureMode = "screen"
 	}
 	region := w.Bounds
 	if a.Region != nil {
@@ -550,10 +568,15 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	if a.SinceSnapshotID != "" && (s.previous.Window == nil || s.previous.Window.ID != w.ID || !sameScope(s.previous.Scope, options) || s.previous.OCRRequested != a.OCR) {
 		return invalid("diff requires the same window and observation filters")
 	}
-	desktop.ReportStage(ctx, "accessibility")
-	elements, truncated, err := s.backend.Observe(ctx, w, options)
-	if err != nil {
-		return response{err: err}
+	var elements []desktop.Element
+	var truncated bool
+	var err error
+	if !w.Menu || !a.Screenshot {
+		desktop.ReportStage(ctx, "accessibility")
+		elements, truncated, err = s.backend.Observe(ctx, w, options)
+		if err != nil {
+			return response{err: err}
+		}
 	}
 	if elements == nil {
 		elements = []desktop.Element{}
@@ -599,6 +622,12 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	}
 	if err = ctx.Err(); err != nil {
 		return response{err: err}
+	}
+	if w.Menu {
+		current, _ := observeMenu(s.backend, w)
+		if current.ID != w.ID || current.Bounds != w.Bounds {
+			return response{err: desktop.Fail("stale_snapshot", "menu changed during observation")}
+		}
 	}
 	s.snapshot = snap
 	var value any = snap

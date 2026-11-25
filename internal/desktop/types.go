@@ -68,6 +68,7 @@ type Window struct {
 	Bounds      Rect   `json:"bounds"`
 	Active      bool   `json:"active"`
 	MouseActive bool   `json:"mouse_active,omitempty"`
+	Menu        bool   `json:"menu,omitempty"`
 	BlockedBy   string `json:"blocked_by,omitempty"`
 	OwnerID     string `json:"-"`
 }
@@ -131,6 +132,13 @@ type Backend interface {
 	Recognize(context.Context, Capture, int) ([]RecognizedText, bool, error)
 	Close()
 }
+
+// MenuObserver finds a visible menu for an exact owner. A candidate without a
+// verified identity can provide bounds for a caller-initiated desktop crop.
+type MenuObserver interface {
+	ActiveMenu(owner Window) (verified Window, suggestedRegion *Rect)
+}
+
 type Error struct {
 	Code   string
 	Detail string

@@ -67,6 +67,8 @@ Windows 上，`computer_type` 将每个 LF、CRLF 或单独 CR 作为一次 Ente
 
 在 Windows 上，后续观察可以跟随输入目标直属的前台窗口，也可以在对话框关闭后返回所属窗口。服务会短暂等待应用处理输入。界面切换较慢时，使用 `computer_wait` 或重新观察。若同时返回 `input_delivered:true` 和 `observation_error`，输入已发送。请先取得新观察，再决定是否重复输入。
 
+Windows 能确认可见菜单归属时，后续观察以 `window.menu:true` 和 `mouse_active:true` 标识菜单。使用 `observe_after:{"screenshot":true}` 会返回菜单矩形范围内的屏幕截图，并标明 `capture_mode:"screen"`。用这张图和快照点击菜单。使用 `observe_after:{}` 会读取菜单的无障碍元素。菜单仍打开时，可将最近一次菜单观察的 `window_id` 传给 `computer_observe` 刷新。菜单归属无法验证但能取得边界时，`observation_error.suggested_region` 提供桌面裁剪范围。可将它作为 `region` 与 `desktop:true` 一起传入，单独观察该区域。
+
 在 Windows 上，使用 `element_id` 点击观察到的弹层控件，控件也可位于主窗口之外。服务在发送鼠标点击前验证弹层归属，并确认实际命中请求的控件。若弹层切换时返回 `stale_snapshot`，请重新观察窗口并使用新引用。对于缺少可验证元素的可见弹层，可观察其周围的小范围桌面区域，并使用该图片的坐标。
 
 在 macOS 上，使用 `capture_mode:"screen"` 取得包含已打开菜单的窗口截图。无障碍接口能确认菜单归属时，可在图内用坐标点击菜单或移动鼠标。菜单超出窗口或归属无法确认时，观察可见菜单周围的小范围桌面区域。

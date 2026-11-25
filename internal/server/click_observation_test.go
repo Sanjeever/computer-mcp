@@ -15,6 +15,15 @@ type clickDesktop struct {
 	afterInput    func()
 	duringObserve func()
 	captureErr    error
+	menu          desktop.Window
+	menuRegion    *desktop.Rect
+}
+
+func (b *clickDesktop) ActiveMenu(owner desktop.Window) (desktop.Window, *desktop.Rect) {
+	if b.menu.OwnerID == owner.ID {
+		return b.menu, nil
+	}
+	return desktop.Window{}, b.menuRegion
 }
 
 func (b *clickDesktop) Input(ctx context.Context, op string, in desktop.Input) error {
@@ -112,6 +121,48 @@ func TestClickObservationReusesImageCoordinates(t *testing.T) {
 	if b.input.Point != (desktop.Point{X: 140, Y: 160}) || s.snapshot != nil {
 		t.Fatalf("second click: %+v, current=%+v", b.input.Point, s.snapshot)
 	}
+}
+
+func TestClickObservationFollowsOwnedMenu(t *testing.T) {
+	for _, screenshot := range []bool{false, true} {
+		s, b := setupClickDesktop()
+		ctx := context.Background()
+		main := b.windows[0]
+		menu := desktop.Window{ID: "menu", OwnerID: main.ID, PID: main.PID, Menu: true, MouseActive: true, Bounds: b.nodes[0].Bounds}
+		if r := observe(ctx, s, ObserveArgs{}); r.err != nil {
+			t.Fatal(r.err)
+		}
+		b.afterInput = func() {
+			b.windows[0].Active = false
+			b.menu = menu
+		}
+		r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, ElementID: "0", ObserveAfter: &MouseObservation{Screenshot: screenshot}})
+		next := requireClickObservation(t, r)
+		if *next.Window != menu || next.Region != menu.Bounds || (len(r.image) > 0) != screenshot || screenshot && (next.CaptureMode != "screen" || b.calls != 1) {
+			t.Fatalf("menu observation screenshot=%t: %+v", screenshot, next)
+		}
+		b.menu = desktop.Window{}
+		requireCode(t, click(ctx, s, ClickArgs{SnapshotID: next.ID, Point: &desktop.Point{X: 5, Y: 5}}), "stale_snapshot")
+		if b.inputs != 1 {
+			t.Fatal("sent input to a closed menu")
+		}
+	}
+}
+
+func TestUnverifiedMenuOffersRegionWithoutCapturing(t *testing.T) {
+	s, b := setupClickDesktop()
+	ctx := context.Background()
+	if r := observe(ctx, s, ObserveArgs{}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	region := b.nodes[0].Bounds
+	b.afterInput = func() { b.menuRegion = &region }
+	r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, ElementID: "0", ObserveAfter: &MouseObservation{Screenshot: true}})
+	result := r.value.(mouseObservationResult)
+	if !result.InputDelivered || result.suggestedRegion == nil || *result.suggestedRegion != region || result.Observation != nil || len(r.image) != 0 || b.inputs != 1 {
+		t.Fatalf("unverified menu result: %+v", result)
+	}
+	requireCode(t, response{err: result.err}, "not_active")
 }
 
 func TestDesktopClickObservationRequiresImage(t *testing.T) {

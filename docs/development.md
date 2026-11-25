@@ -59,6 +59,8 @@ Remove-Item Env:COMPUTER_MCP_NATIVE_TEST
 
 Keep the desktop idle so the fixture windows retain focus. Windows fixture setup can click its own verified edit control to acquire foreground access. macOS fixtures report missing Accessibility or Screen Recording permissions as skips. Hosted CI leaves interactive fixtures disabled and does not verify permission attribution or signed upgrades.
 
+On a Windows test machine without the Go toolchain, copy the desktop test executable from `go test -c ./internal/desktop` and a native server built from the same checkout. Set `COMPUTER_MCP_TEST_BINARY` to the server's absolute path before running the fixture executable. The follow-up observation fixtures exercise an owned dialog and a Win32 context menu through the stdio server.
+
 ## Release
 
 The root [package.json](../package.json) version is authoritative. Native builds embed it, and platform packaging checks the `optionalDependencies` versions against it. Update these entries together, then run `pnpm install --lockfile-only`. Commit the manifest and lockfile, along with any affected bilingual documentation.

@@ -59,6 +59,8 @@ Remove-Item Env:COMPUTER_MCP_NATIVE_TEST
 
 测试期间保持桌面空闲，让夹具窗口保持焦点。Windows 夹具可在准备阶段点击已确认属于自身的编辑控件以获取前台焦点。macOS 缺少辅助功能或屏幕录制权限时，夹具会报告跳过原因。托管 CI 不启用交互夹具，也不验证权限归属或签名升级。
 
+Windows 测试机没有 Go 工具链时，可复制 `go test -c ./internal/desktop` 生成的桌面测试程序，以及同一份源码构建的原生服务。运行夹具前，将 `COMPUTER_MCP_TEST_BINARY` 设为服务的绝对路径。后续观察夹具通过 stdio 服务验证所属对话框和 Win32 右键菜单。
+
 ## 发布
 
 根 [package.json](../package.json) 的版本是唯一来源。原生构建嵌入该版本，平台打包时据此检查 `optionalDependencies` 的版本。同步更新这些字段后运行 `pnpm install --lockfile-only`。提交清单、锁文件及受影响的中英文文档。

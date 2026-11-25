@@ -5,16 +5,18 @@ import (
 	"encoding/json"
 	"runtime"
 
+	"github.com/Sanjeever/computer-mcp/internal/desktop"
 	"github.com/Sanjeever/computer-mcp/internal/i18n"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type toolFailure struct {
-	Code    string       `json:"code"`
-	Message string       `json:"message"`
-	Detail  string       `json:"detail,omitempty"`
-	Timing  *stageTiming `json:"timing,omitempty"`
+	Code            string        `json:"code"`
+	Message         string        `json:"message"`
+	Detail          string        `json:"detail,omitempty"`
+	Timing          *stageTiming  `json:"timing,omitempty"`
+	SuggestedRegion *desktop.Rect `json:"suggested_region,omitempty"`
 }
 
 func New(version string, c i18n.Catalog, e *Engine) *mcp.Server {
@@ -59,7 +61,7 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 		}
 		if v, ok := r.value.(mouseObservationResult); ok && v.err != nil {
 			code, detail := errorCode(v.err)
-			v.ObservationError = &toolFailure{Code: code, Message: c.Text("input_observation_failed"), Detail: detail, Timing: r.timing}
+			v.ObservationError = &toolFailure{Code: code, Message: c.Text("input_observation_failed"), Detail: detail, Timing: r.timing, SuggestedRegion: v.suggestedRegion}
 			r.value = v
 		}
 		data, err := json.Marshal(r.value)
