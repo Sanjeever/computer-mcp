@@ -37,7 +37,7 @@ func TestProtocolAndLanguages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(list.Tools) != 10 {
+			if len(list.Tools) != 11 {
 				t.Fatalf("tools=%d", len(list.Tools))
 			}
 			for _, tool := range list.Tools {

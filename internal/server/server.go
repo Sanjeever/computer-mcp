@@ -30,6 +30,7 @@ func New(version string, c i18n.Catalog, e *Engine) *mcp.Server {
 	register(s, e, c, "computer_key", false, key)
 	register(s, e, c, "computer_scroll", false, scroll)
 	register(s, e, c, "computer_drag", false, drag)
+	register(s, e, c, "computer_batch", false, batch)
 	register(s, e, c, "computer_wait", true, wait)
 	return s
 }
@@ -56,6 +57,18 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 				message = c.Text("target_obscured_windows")
 			}
 			v := toolFailure{Code: code, Message: message, Detail: detail, Timing: r.timing}
+			if batch, ok := r.value.(batchResult); ok {
+				batch.Failure = &v
+				data, err := json.Marshal(batch)
+				if err != nil {
+					return nil, nil, err
+				}
+				return &mcp.CallToolResult{
+					IsError:           true,
+					Content:           []mcp.Content{&mcp.TextContent{Text: string(data)}},
+					StructuredContent: batch,
+				}, nil, nil
+			}
 			data, _ := json.Marshal(v)
 			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
 		}

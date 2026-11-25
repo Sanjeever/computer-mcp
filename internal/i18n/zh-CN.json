@@ -32,6 +32,8 @@
   "computer_key": "向激活的 window_id 发送一组组合键。修饰键 ctrl、alt、shift、meta；普通键 a-z、0-9、enter、tab、escape、space、backspace、delete、home、end、pageup、pagedown、left、right、up、down 及 f1-f12。例如 macOS 全选为 [\"meta\",\"a\"]，Windows 为 [\"ctrl\",\"a\"]。文本导航和选区受应用及自动换行影响；剪切或删除前先核对目标选区。",
   "computer_scroll": "移动到快照中的图片坐标并按滚轮步数滚动。delta_y 正值向下，delta_x 正值向右。窗口快照要求 active=true 或 mouse_active=true，桌面快照检查显示器布局。可选 hold_keys 在本次操作期间按住，要求激活的窗口快照；例如 ctrl 可用于应用支持的缩放。结束后释放按键。",
   "computer_drag": "持续按住鼠标左键拖动。直线拖动提供 from 和 to；自由笔画提供包含起终点的 path，共 2～128 个图片坐标点。所有坐标取自最新截图，duration_ms 为整条路径总时长。窗口快照要求 active=true 或 mouse_active=true，发送前检查每个路径点。可选 hold_keys 要求激活的窗口快照；应用支持时，可用 shift 约束绘制、space 平移画布。取消或失败时释放鼠标及所按键。传入 observe_after 可在拖拽送达后取得新观察。若同时返回 input_delivered=true 和 observation_error，请重新观察再决定是否重复输入。",
+  "computer_batch": "用当前笔刷从同一张窗口截图连续绘制多笔。每步提供 op=drag、path 和可选 duration_ms。服务先校验整批参数，第一次发送时消耗快照，每笔发送前检查窗口和路径。遇到首个失败即停止，零重试。检查逐步 input_delivery（sent、not_sent、unknown）。失败后先重新观察绘图窗口，再决定如何继续。",
+  "steps": "按顺序绘制 1～8 笔，合计最多 256 个图片坐标点和 6000 毫秒。每步提供 op=drag、含 2～128 个点的 path 和可选 duration_ms（100～3000，默认 500）。",
   "computer_wait": "在 timeout_ms 内等待窗口，可选 active=true、focused=true、精确 focus_name 及无障碍 text；多个条件需同时满足。超时返回 matched=false。有界轮询，使旧快照失效，不发送输入。",
   "permission_denied": "缺少桌面权限，请在系统设置中启用辅助功能；截图还需要屏幕录制权限。",
   "stale_snapshot": "快照或目标已过期、被替换或已消耗。请重新观察预期窗口或桌面，使用新返回的 snapshot_id、元素 ID 和图片坐标。",

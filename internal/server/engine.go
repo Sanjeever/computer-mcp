@@ -242,8 +242,8 @@ func (s *state) latestSnapshot(id string) (*Snapshot, error) {
 }
 
 func (s *state) validateSnapshotTarget(snap *Snapshot) error {
-	if snap.expired() {
-		return desktop.Fail("stale_snapshot", "snapshot exceeded its 60-second lifetime at "+snap.ExpiresAt.Format(time.RFC3339Nano))
+	if err := snap.checkExpiry(); err != nil {
+		return err
 	}
 	if snap.Window == nil {
 		return checkDisplayLayout(s.backend, snap.Displays)
@@ -265,6 +265,13 @@ func (s *state) validateSnapshotTarget(snap *Snapshot) error {
 	}
 	if w.OwnerID != snap.Window.OwnerID {
 		return desktop.Fail("stale_snapshot", "window ownership changed")
+	}
+	return nil
+}
+
+func (s *Snapshot) checkExpiry() error {
+	if s.expired() {
+		return desktop.Fail("stale_snapshot", "snapshot exceeded its 60-second lifetime at "+s.ExpiresAt.Format(time.RFC3339Nano))
 	}
 	return nil
 }
@@ -947,7 +954,7 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 
 func dragDuration(path []desktop.Point, duration int) (int, error) {
 	if len(path) < 2 || len(path) > 128 {
-		return 0, desktop.Fail("invalid_argument", "provide either from and to, or path with 2..128 image points")
+		return 0, desktop.Fail("invalid_argument", "path must contain 2..128 image points")
 	}
 	if duration == 0 {
 		return 500, nil

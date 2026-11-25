@@ -29,6 +29,8 @@ Use freshly built launcher and host platform tarballs in `artifacts/`. `pack:che
 
 The backend uses one locked OS thread to preserve UIA COM lifetimes. Provider calls can outlive the request deadline, so the worker retains the per-user lock until the native call returns to prevent an overlapping operation. See the [request limits](../README.md#limits-and-behavior).
 
+`computer_batch` uses one job and one desktop lock. It plans image-coordinate transforms before the first stroke, consumes the public snapshot at dispatch, and keeps the transform local to the job. Each stroke still has its own target and path checks and mouse button lifetime. The checks can identify changes to window geometry and occlusion. Changes to the brush or canvas inside the window are application state that the caller should confirm between batches.
+
 Window and element IDs follow native identity to keep title edits and traversal order changes from retargeting input. macOS preserves window mappings across temporary enumeration gaps and retains AX identity when a screen-window match is ambiguous.
 
 Window capture and screen capture are explicit choices because an unobscured window image and the visible input target can differ. OCR text from screen capture may belong to an overlapping window, so it stays separate from native controls. The Windows npm distribution has no MSIX package identity, so OCR is currently available through macOS Vision. See the [tool contract](../README.md#tools).

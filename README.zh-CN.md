@@ -45,6 +45,7 @@ Windows 应运行在目标用户的交互式会话中。`computer_status` 报告
 | `computer_key`     | 发送一组组合键                     |
 | `computer_scroll`  | 在快照图片坐标处滚动               |
 | `computer_drag`    | 在快照图片坐标中直线或连续路径拖动 |
+| `computer_batch`   | 使用同一张窗口截图连续绘制多笔     |
 | `computer_wait`    | 等待窗口或无障碍文本匹配           |
 
 先调用 `computer_window({"action":"list"})`，激活精确 `window_id`，再观察窗口。截图坐标相对于返回图片，左上角为 `(0, 0)`。`region` 和窗口边界使用桌面坐标，macOS 为逻辑点，Windows 为 DPI 感知像素，由服务完成转换。
@@ -110,6 +111,10 @@ Windows 可能拒绝前台激活。此时返回 `activation_failed`，并在能�
   "observe_after": { "screenshot": true }
 }
 ```
+
+通过窗口截图确认笔刷和画布后，调用 `computer_batch`。传入该截图的 `snapshot_id` 和 1～8 个 `steps`，例如 `{"op":"drag","path":[{"x":10,"y":20},{"x":40,"y":60}]}`。所有路径都使用同一张图的坐标。每步是一次左键按下到抬起的笔画，含 2～128 个点，可选 `duration_ms`（100～3,000，默认 500）。每批合计最多 256 个路径点，计划拖拽时长最多 6,000 毫秒。
+
+批次发送前校验全部参数，首次进入原生输入时消耗快照，每笔发送前校验窗口和该笔路径的顶点。全部步骤在同一个桌面锁内顺序执行，遇到首个失败即停止，零重试。返回的 `steps` 按输入顺序报告 `status`（`completed`、`failed` 或 `not_run`）和 `input_delivery`（`sent`、`not_sent` 或 `unknown`）。批次中途停止时返回 MCP 工具错误，包含从零开始的 `stopped_at`、错误详情和逐笔结果。此前发送的笔画会保留在应用中。笔画执行期间发生原生失败时，可能已有部分事件送达（`unknown`）。换笔刷或从失败中恢复前，请重新观察。
 
 观察支持区分大小写的 `text` 子串、忽略大小写精确匹配的原生 `role`、`region`、`compact:true` 和 `max_depth`（1～64，默认 64）。`compact` 省略无名称、无值且未聚焦的结构容器，继续遍历其后代。不截图时也可用 `region` 筛选相交的语义元素。通过 `root_id` 和当前 `snapshot_id` 可限定子树。
 

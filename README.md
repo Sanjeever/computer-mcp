@@ -45,6 +45,7 @@ On Windows, run in the target user's interactive session. `computer_status` repo
 | `computer_key`     | Send one keyboard chord                                   |
 | `computer_scroll`  | Scroll at a snapshot image point                          |
 | `computer_drag`    | Straight or continuous path drag in snapshot image points |
+| `computer_batch`   | Draw consecutive strokes from one window screenshot        |
 | `computer_wait`    | Wait for a window or matching accessibility text          |
 
 Start with `computer_window({"action":"list"})`, activate an exact `window_id`, then observe it. Screenshot coordinates use the returned image, with `(0, 0)` at its top left. `region` and window bounds use desktop coordinates: logical points on macOS, DPI-aware pixels on Windows. The server converts between these spaces.
@@ -110,6 +111,10 @@ Window activation does not select a text field. Check the observed `focused` ele
   "observe_after": { "screenshot": true }
 }
 ```
+
+Use `computer_batch` after confirming the brush and canvas in a window screenshot. Pass its `snapshot_id` and 1–8 `steps` such as `{"op":"drag","path":[{"x":10,"y":20},{"x":40,"y":60}]}`. Every path uses that image's coordinates. Each step is one left-button stroke with 2–128 points and an optional `duration_ms` (100–3,000, default 500). The batch permits up to 256 path points and 6,000 ms of planned drag time in total.
+
+The batch validates all arguments before sending input, consumes the snapshot at the first native dispatch, and checks the window and each stroke's vertices before sending it. All steps run in order under one desktop lock. The first failure stops the batch without retry. The ordered `steps` result reports `status` (`completed`, `failed`, or `not_run`) and `input_delivery` (`sent`, `not_sent`, or `unknown`). A stopped batch returns an MCP tool error with the zero-based `stopped_at` index, error details, and its step results. Previously sent strokes remain in the application. Native failure during a stroke can leave some events delivered (`unknown`). Observe again before changing brushes or deciding how to continue after a failure.
 
 Observation supports case-sensitive `text` substrings, case-insensitive exact native `role` matches, `region`, `compact:true`, and `max_depth` (1–64, default 64). `compact` omits unnamed, empty, unfocused structural containers while retaining their descendants. `region` filters intersecting semantic elements even without a screenshot. `root_id` with the current `snapshot_id` scopes traversal to a subtree.
 
