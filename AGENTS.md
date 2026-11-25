@@ -2,7 +2,7 @@
 
 [简体中文](AGENTS.zh-CN.md)
 
-Read [README.md](README.md) for the user contract and [docs/development.md](docs/development.md) for build, verification, and release procedures. English is the primary documentation language. Use English Conventional Commits.
+Read [README.md](README.md) for supported systems and setup, [docs/usage.md](docs/usage.md) for the tool contract, and [docs/development.md](docs/development.md) for build, verification, and release procedures. English is the primary documentation language. Use English Conventional Commits.
 
 ## Architecture
 
@@ -25,8 +25,8 @@ Read [README.md](README.md) for the user contract and [docs/development.md](docs
 
 ## Documentation sync
 
-- In the same change as a schema, default, output, error, or behavior update, check the affected README, development guide, `internal/i18n` descriptions, comments, and examples against code and tests. Keep both languages equivalent and catalog keys in parity. Preserve native diagnostic details.
-- Keep the user contract in README, contributor rules here, and procedures and design rationale in the [development guide](docs/development.md). Link to those sources or to configuration for versions, package names, platform support, and CI commands.
+- In the same change as a schema, default, output, error, or behavior update, check the affected README, user and development guides, `internal/i18n` descriptions, comments, and examples against code and tests. Keep both languages equivalent and catalog keys in parity. Preserve native diagnostic details.
+- Keep platform support and setup in README, the tool contract in the [user guide](docs/usage.md), contributor rules here, and procedures and design rationale in the [development guide](docs/development.md). Link to those sources or to configuration for versions, package names, platform support, and CI commands.
 - Keep the reasons behind design decisions in docs and comments. When implementation conflicts with an established requirement, record the code or test evidence and confirm significant discrepancies before changing the contract.
 
 ## Verification and release

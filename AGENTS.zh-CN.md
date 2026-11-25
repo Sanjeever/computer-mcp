@@ -1,6 +1,6 @@
 # Computer MCP
 
-[English](AGENTS.md) 是主要约定。用户契约见 [README.zh-CN.md](README.zh-CN.md)，构建、验证与发布见[开发文档](docs/development.zh-CN.md)。文档以英文为主。提交使用英文 Conventional Commits。
+[English](AGENTS.md) 是主要约定。支持平台和接入见 [README.zh-CN.md](README.zh-CN.md)，工具契约见[使用指南](docs/usage.zh-CN.md)，构建、验证与发布见[开发文档](docs/development.zh-CN.md)。文档以英文为主。提交使用英文 Conventional Commits。
 
 ## 架构
 
@@ -23,8 +23,8 @@
 
 ## 文档同步
 
-- 改动工具 schema、默认值、输出、错误或行为时，在同一改动中对照代码与测试检查受影响的 README、开发指南、`internal/i18n` 描述、注释和示例。保持中英文含义与翻译键一致，保留原生诊断细节。
-- 用户契约放在 README，贡献约束放在本文，流程和设计理由放在[开发指南](docs/development.zh-CN.md)。版本、包名、支持平台与 CI 命令通过链接引用所属文档或配置。
+- 改动工具 schema、默认值、输出、错误或行为时，在同一改动中对照代码与测试检查受影响的 README、使用和开发指南、`internal/i18n` 描述、注释和示例。保持中英文含义与翻译键一致，保留原生诊断细节。
+- 支持平台和接入放在 README，工具契约放在[使用指南](docs/usage.zh-CN.md)，贡献约束放在本文，流程和设计理由放在[开发指南](docs/development.zh-CN.md)。版本、包名、支持平台与 CI 命令通过链接引用所属文档或配置。
 - 文档与注释保留设计理由。实现与既有需求冲突时，记录代码或测试证据，重大分歧先确认，再修改契约。
 
 ## 验证与发布
