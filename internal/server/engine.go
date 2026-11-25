@@ -62,6 +62,7 @@ type job struct {
 	run           func(context.Context, *state) response
 	result        chan response
 	mouseDelivery atomic.Pointer[mouseObservationResult]
+	batchProgress atomic.Pointer[batchProgress]
 	progress      requestProgress
 }
 type Engine struct {
@@ -76,6 +77,7 @@ type state struct {
 	snapshot      *Snapshot
 	previous      *Snapshot
 	mouseDelivery *atomic.Pointer[mouseObservationResult]
+	batchProgress *atomic.Pointer[batchProgress]
 }
 
 func NewEngine(parent context.Context) *Engine {
@@ -138,8 +140,10 @@ func newEngine(parent context.Context, open func() (desktop.Backend, error)) *En
 					r.err = err
 				} else {
 					s.mouseDelivery = &j.mouseDelivery
+					s.batchProgress = &j.batchProgress
 					r = j.run(j.ctx, s)
 					s.mouseDelivery = nil
+					s.batchProgress = nil
 				}
 				if err = lock.Unlock(); err != nil && r.err == nil {
 					r.err = err
@@ -190,8 +194,11 @@ func (j *job) interrupted(err error) response {
 		return r
 	default:
 	}
-	// A blocked native observation still holds the worker. The caller can
-	// learn that the input was delivered without waiting for the provider.
+	// A blocked native call still holds the worker. Return the last published
+	// input progress without waiting for the provider.
+	if progress := j.batchProgress.Load(); progress != nil {
+		return progress.interrupted(err)
+	}
 	if delivered := j.mouseDelivery.Load(); delivered != nil {
 		return response{value: delivered.failed(err, nil)}
 	}

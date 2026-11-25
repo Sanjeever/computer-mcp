@@ -118,6 +118,8 @@ The batch validates all arguments before sending input, consumes the snapshot at
 
 Pass `observe_after:{"screenshot":true}` to return one JPEG and a new `observation.snapshot_id` for the same window after the whole batch succeeds. The follow-up reuses the capture mode, width limit, screenshot-only setting, and crop when it still fits. If the drawing window loses readiness or capture fails, the result retains the completed steps and reports `observation_error`.
 
+If the server can return a response after timeout or cancellation, it reports the last confirmed progress. A stroke in native dispatch can be `unknown`. Client cancellation or disconnect can prevent delivery of the entire response. Observe the canvas before resuming whenever the result is unavailable.
+
 Observation supports case-sensitive `text` substrings, case-insensitive exact native `role` matches, `region`, `compact:true`, and `max_depth` (1–64, default 64). `compact` omits unnamed, empty, unfocused structural containers while retaining their descendants. `region` filters intersecting semantic elements even without a screenshot. `root_id` with the current `snapshot_id` scopes traversal to a subtree.
 
 Set `screenshot_only:true` on a window observation to return a JPEG and an actionable window snapshot without traversing accessibility elements. It implies `screenshot:true` and supports image settings such as `region`, `max_width`, and `capture_mode`. Semantic filters and diffs require an observation with accessibility traversal. An `observe_after` screenshot of the same window preserves screenshot-only mode and uses the same geometry and hit checks for coordinate input.

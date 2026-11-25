@@ -44,6 +44,34 @@ type batchResult struct {
 	suggestedRegion  *desktop.Rect
 }
 
+type batchProgress struct {
+	total        int
+	completed    int
+	dispatching  bool
+	observeAfter bool
+}
+
+func (p batchProgress) interrupted(err error) response {
+	if p.completed < p.total {
+		delivery := "not_sent"
+		if p.dispatching {
+			delivery = "unknown"
+		}
+		return batchStopped(p.total, p.completed, delivery, err)
+	}
+	result := batchResults(p.total, p.completed)
+	if p.observeAfter {
+		result.observationErr = err
+	}
+	return response{value: result}
+}
+
+func (s *state) reportBatchProgress(progress batchProgress) {
+	if s.batchProgress != nil {
+		s.batchProgress.Store(&progress)
+	}
+}
+
 func batchResults(total, completed int) batchResult {
 	r := batchResult{Steps: make([]batchStepResult, total)}
 	for i := range r.Steps {
@@ -80,15 +108,27 @@ func batch(ctx context.Context, s *state, a BatchArgs) response {
 	if err != nil {
 		return response{err: err}
 	}
+	progress := batchProgress{total: len(inputs), observeAfter: a.ObserveAfter != nil}
+	s.reportBatchProgress(progress)
 	for i, input := range inputs {
 		if err := checkBatchStroke(ctx, s, snap, input.Path); err != nil {
 			return batchStopped(len(inputs), i, "not_sent", err)
 		}
-		s.snapshot = nil
 		desktop.ReportStage(ctx, "input")
+		progress.dispatching = true
+		s.reportBatchProgress(progress)
+		// Publish uncertainty before the final cancellation check. A caller
+		// that sees not_sent must be able to rely on it.
+		if err := ctx.Err(); err != nil {
+			return batchStopped(len(inputs), i, "not_sent", err)
+		}
+		s.snapshot = nil
 		if err := s.backend.Input(ctx, "drag", input); err != nil {
 			return batchStopped(len(inputs), i, "unknown", err)
 		}
+		progress.completed++
+		progress.dispatching = false
+		s.reportBatchProgress(progress)
 	}
 	result := batchResults(len(inputs), len(inputs))
 	if a.ObserveAfter == nil {

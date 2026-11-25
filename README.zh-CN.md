@@ -118,6 +118,8 @@ Windows 可能拒绝前台激活。此时返回 `activation_failed`，并在能�
 
 传入 `observe_after:{"screenshot":true}`，整批成功后返回同一窗口的一张 JPEG 和新 `observation.snapshot_id`。后续观察沿用捕获模式、宽度上限、纯截图设置以及仍可容纳的裁剪区域。若绘图窗口失去输入就绪状态或截图失败，结果保留已完成的步骤，并报告 `observation_error`。
 
+超时或取消后，若服务仍能返回响应，会报告最后确认的执行进度。仍处于原生发送中的笔画可能为 `unknown`。客户端取消或断开连接可能收不到整个响应。无法取得结果时，请先观察画布再继续。
+
 观察支持区分大小写的 `text` 子串、忽略大小写精确匹配的原生 `role`、`region`、`compact:true` 和 `max_depth`（1～64，默认 64）。`compact` 省略无名称、无值且未聚焦的结构容器，继续遍历其后代。不截图时也可用 `region` 筛选相交的语义元素。通过 `root_id` 和当前 `snapshot_id` 可限定子树。
 
 窗口观察可设 `screenshot_only:true`，直接返回 JPEG 和可操作的窗口快照，省去无障碍遍历。该选项隐含 `screenshot:true`，支持 `region`、`max_width` 和 `capture_mode` 等图片设置。语义筛选和差异观察需要遍历无障碍树。同一窗口的 `observe_after` 截图会沿用纯截图模式，坐标输入仍需通过几何和命中校验。

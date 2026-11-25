@@ -79,13 +79,13 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 			return nil, nil, err
 		}
 		result := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}
+		if len(r.image) > 0 {
+			result.Content = append(result.Content, &mcp.ImageContent{Data: r.image, MIMEType: "image/jpeg"})
+		}
 		if r.err != nil {
 			result.IsError = true
 			result.StructuredContent = r.value
 			return result, nil, nil
-		}
-		if len(r.image) > 0 {
-			result.Content = append(result.Content, &mcp.ImageContent{Data: r.image, MIMEType: "image/jpeg"})
 		}
 		return result, r.value, nil
 	})

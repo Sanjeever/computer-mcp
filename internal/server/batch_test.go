@@ -57,8 +57,9 @@ func batchTestCall(t *testing.T, cs *mcp.ClientSession, name string, args map[st
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
-	if err := json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), out); err != nil {
-		t.Fatalf("%s result: %v", name, err)
+	body := r.Content[0].(*mcp.TextContent).Text
+	if err := json.Unmarshal([]byte(body), out); err != nil {
+		t.Fatalf("%s result: %v: %s", name, err, body)
 	}
 	return r
 }
@@ -250,5 +251,75 @@ func TestBatchFollowUpDoesNotSwitchToOwnedWindow(t *testing.T) {
 	if r.IsError || got.Observation != nil || len(r.Content) != 1 || got.ObservationError == nil ||
 		got.ObservationError.Code != "stale_snapshot" || !reflect.DeepEqual(got.Steps, []batchTestStep{{"completed", "sent"}}) {
 		t.Fatalf("owned window follow-up: result=%+v, content=%+v", got, r.Content)
+	}
+}
+
+func TestBatchCancellationReportsBlockedStrokeAsUnknown(t *testing.T) {
+	_, fake := setup()
+	started, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	b := &batchTestDesktop{fakeDesktop: fake, afterInput: func(ctx context.Context, count int) error {
+		if count != 2 {
+			return nil
+		}
+		close(started)
+		<-release
+		return ctx.Err()
+	}}
+	cs, stop := connectBatchTest(t, b)
+	snap := batchTestObserve(t, cs)
+	go stopBatchWhenStarted(t.Context(), started, stop)
+	var got batchTestResult
+	r := batchTestCall(t, cs, "computer_batch", map[string]any{
+		"snapshot_id": snap.ID,
+		"steps":       []map[string]any{batchTestStroke(10), batchTestStroke(100), batchTestStroke(200)},
+	}, &got)
+	want := []batchTestStep{{"completed", "sent"}, {"failed", "unknown"}, {"not_run", "not_sent"}}
+	if !r.IsError || got.StoppedAt == nil || *got.StoppedAt != 1 || !reflect.DeepEqual(got.Steps, want) ||
+		got.Failure == nil || got.Failure.Code != "canceled" || got.Failure.Timing == nil || got.Failure.Timing.Stage != "input" {
+		t.Fatalf("canceled while dispatching: %+v", got)
+	}
+}
+
+func stopBatchWhenStarted(ctx context.Context, started <-chan struct{}, stop context.CancelFunc) {
+	select {
+	case <-started:
+		stop()
+	case <-ctx.Done():
+	}
+}
+
+type blockedBatchCapture struct {
+	*fakeDesktop
+	started, release chan struct{}
+}
+
+func (b *blockedBatchCapture) CaptureWindow(ctx context.Context, w desktop.Window, r desktop.Rect, width int) (desktop.Capture, error) {
+	if b.inputs == 0 {
+		return b.fakeDesktop.CaptureWindow(ctx, w, r, width)
+	}
+	close(b.started)
+	<-b.release
+	return desktop.Capture{}, ctx.Err()
+}
+
+func TestBatchCancellationDuringBlockedCapturePreservesCompletedSteps(t *testing.T) {
+	_, fake := setup()
+	b := &blockedBatchCapture{fakeDesktop: fake, started: make(chan struct{}), release: make(chan struct{})}
+	defer close(b.release)
+	cs, stop := connectBatchTest(t, b)
+	snap := batchTestObserve(t, cs)
+	go stopBatchWhenStarted(t.Context(), b.started, stop)
+	var got batchTestResult
+	r := batchTestCall(t, cs, "computer_batch", map[string]any{
+		"snapshot_id":   snap.ID,
+		"steps":         []map[string]any{batchTestStroke(10), batchTestStroke(100)},
+		"observe_after": map[string]any{"screenshot": true},
+	}, &got)
+	want := []batchTestStep{{"completed", "sent"}, {"completed", "sent"}}
+	if r.IsError || got.Observation != nil || !reflect.DeepEqual(got.Steps, want) ||
+		got.ObservationError == nil || got.ObservationError.Code != "canceled" ||
+		got.ObservationError.Timing == nil || got.ObservationError.Timing.Stage != "capture" {
+		t.Fatalf("canceled while capturing: %+v", got)
 	}
 }
