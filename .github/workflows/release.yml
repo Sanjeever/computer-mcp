@@ -3,12 +3,6 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish verified packages and create a GitHub Release (select a version tag)
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -18,49 +12,68 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Check version and notes
+        run: node scripts/release.ts check "$GITHUB_REF_NAME"
+      - name: Confirm the tagged commit is on main
+        run: git merge-base --is-ancestor HEAD refs/remotes/origin/main
+
+  verify:
+    needs: validate
     uses: ./.github/workflows/ci.yml
 
+  assemble:
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: npm-*
+          merge-multiple: true
+          path: artifacts
+      - run: node scripts/release.ts assemble "$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: artifacts/
+          if-no-files-found: error
+
   publish:
-    if: github.event_name == 'push' || inputs.publish
-    needs: build
-    runs-on: ubuntu-latest
+    needs: assemble
+    runs-on: ubuntu-24.04
     environment: npm
     permissions:
       contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@11.20.0 --ignore-scripts --registry=https://registry.npmjs.org
       - uses: actions/download-artifact@v4
         with:
-          name: npm-launcher
+          name: release-assets
           path: artifacts
-      - uses: actions/download-artifact@v4
-        with:
-          name: npm-darwin-arm64
-          path: artifacts
-      - uses: actions/download-artifact@v4
-        with:
-          name: npm-win32-x64
-          path: artifacts
-      - name: Verify version and collect packages
-        shell: bash
-        run: |
-          version=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')
-          test "$GITHUB_REF_TYPE" = tag
-          test "$GITHUB_REF_NAME" = "v$version"
-      - name: Publish native packages, then launcher
-        shell: bash
-        run: |
-          npm publish artifacts/*-darwin-arm64-*.tgz --access public --provenance
-          npm publish artifacts/*-win32-x64-*.tgz --access public --provenance
-          version=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')
-          npm publish "artifacts/sanjeever-computer-mcp-$version.tgz" --access public --provenance
-      - name: Create GitHub Release
+      - name: Publish verified npm packages and GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/*.tgz --verify-tag --generate-notes
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/release.ts publish "$GITHUB_REF_NAME"

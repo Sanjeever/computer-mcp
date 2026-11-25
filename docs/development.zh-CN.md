@@ -71,15 +71,23 @@ Windows 测试机没有 Go 工具链时，可复制 `go test -c ./internal/deskt
 
 ## 发布
 
-根 [package.json](../package.json) 的版本是唯一来源。原生构建嵌入该版本，平台打包时据此检查 `optionalDependencies` 的版本。同步更新这些字段后运行 `pnpm install --lockfile-only`。提交清单、锁文件及受影响的中英文文档。
+根 [package.json](../package.json) 的版本是唯一来源，原生构建嵌入该版本。同步更新它和两个 `optionalDependencies` 版本，再运行 `pnpm install --lockfile-only`。添加 `docs/releases/X.Y.Z.md` 和 `docs/releases/X.Y.Z.zh-CN.md`，记录用户可见变化、升级说明和实际验证。版本、日志和锁文件变更一同提交。GitHub Release 使用英文日志作为正文。
 
-[Release](../.github/workflows/release.yml) 工作流提供两个入口。
+在仓库根目录运行 `node --import=tsx scripts/release.ts check vX.Y.Z` 核对发布输入。可以在发布提交上运行 [CI](../.github/workflows/ci.yml) 获取构建产物。提交进入 `main` 并准备公开后，推送 `vX.Y.Z` 标签。[Release 工作流](../.github/workflows/release.yml) 先校验标签、版本、平台依赖、日志和 `main` 历史，再调用 CI。
 
-- 推送 `vX.Y.Z` 标签，构建、验证、发布三个 npm 包并创建 GitHub Release。
-- 手动运行 Release 工作流，设置 `publish=false`，生成和上传产物，不公开发布。设置 `publish=true` 时须选择与版本匹配的标签。
+### 首次发布
 
-标签须匹配 `package.json`。工作流使用 CI 产出的 tarball，先发布原生平台包，再发布启动器。npm 版本不可覆盖。重跑失败的发布任务前，先检查哪些包已发布。
+1. 创建 GitHub 的 `npm` environment，允许 `v*` 标签部署。可设置审批人，让发布任务等待标签产物验收。如果维护者审批自己发起的部署，保留自审权限。参见 [GitHub 部署保护规则](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)。
+2. 为启动器和两个平台包建立所有权。包名尚未出现在 npm 时，以 scope 所有者身份登录，对各个已验证的引导 tarball 执行 `npm stage publish <tarball> --access public --tag bootstrap`。引导版本须与正式版不同，暂存会占用该版本号。npm 会公开 `0.0.0-stage` 占位版本，引导 tarball 留在待审队列。参见 [npm 暂存发布](https://docs.npmjs.com/staged-publishing/)。
+3. 在**三个包各自的设置**中添加 GitHub Actions Trusted Publisher，填写所有者 `Sanjeever`、仓库 `computer-mcp`、工作流 `release.yml`、environment `npm`，并开启 **Allow npm publish**。在首次 OIDC 成功发布前两天内完成配置。参见 [npm Trusted Publishers](https://docs.npmjs.com/trusted-publishers/)。
+4. 在 macOS 和 Windows 的交互式桌面验收最终安装包，检查实际客户端的启动路径，以及由系统处理的权限授予。如果启用了审批，在发布任务等待时下载同一标签运行的 `release-assets`。使用 tarball 前，从标签对应的检出目录执行 `node --import=tsx scripts/release.ts verify vX.Y.Z <目录>` 核对清单。
 
-首次公开发布前，为 [package.json](../package.json) 中 `name` 和 `optionalDependencies` 列出的包建立所有权。首次创建包可能需要带认证的引导发布。为对应仓库和[发布工作流](../.github/workflows/release.yml)配置 npm trusted publishing，使用发布任务声明的 GitHub environment。创建该环境并设置保护规则。工作流使用 OIDC 和 npm provenance。
+若占位包无法配置 OIDC，可用标签运行中 `release-assets` 的同一批 tarball 执行一次认证发布。先暂存并批准两个原生包，再暂存并批准启动器，正式版使用 `latest` 标签。发布任务核对 npm 摘要后公开 GitHub Release。手工发布的版本没有工作流自动生成的 npm provenance。正式版上线后，拒绝仍待审的引导版本。下一次 OIDC 发布前配置或刷新 Trusted Publisher。
+
+### 发布与恢复
+
+发布任务下载 `release-assets` 并核对其中的清单，用三个 tarball 创建或恢复 GitHub Release 草稿。通过 npm OIDC 和 provenance 先发布两个原生包，再发布启动器，随后公开 Release。在两个受支持平台上分别运行 `npx -y @sanjeever/computer-mcp@X.Y.Z --version` 验证从 registry 安装，再通过客户端接入并调用 `computer_status`。
+
+发布失败时，在原运行中使用 **Re-run failed jobs**，复用原始 `release-assets`。脚本跳过在 npm 上与原 tarball 摘要相同的版本，并补传草稿中缺失的附件。查询错误、附件未完成或摘要不符，以及 npm 版本摘要冲突都会停止发布。删除未完成的草稿附件前先核实状态。如果原产物过期或 npm 已有同版本的不同字节，先核对已发布内容，必要时准备新版本。npm 版本不可覆盖。
 
 [平台打包脚本](../scripts/platform.ts)会随预编译二进制附上第三方许可。发布工作流目前省略 Apple Developer ID 签名与公证、Windows Authenticode 签名。应实测签名升级时能否保留授权，再将其写为受支持行为。

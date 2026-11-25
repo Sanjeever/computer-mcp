@@ -71,15 +71,23 @@ On a Windows test machine without the Go toolchain, copy the desktop test execut
 
 ## Release
 
-The root [package.json](../package.json) version is authoritative. Native builds embed it, and platform packaging checks the `optionalDependencies` versions against it. Update these entries together, then run `pnpm install --lockfile-only`. Commit the manifest and lockfile, along with any affected bilingual documentation.
+The root [package.json](../package.json) version is authoritative. Native builds embed it. Update it and the two `optionalDependencies` versions together, then run `pnpm install --lockfile-only`. Add `docs/releases/X.Y.Z.md` and `docs/releases/X.Y.Z.zh-CN.md` with user-facing changes, upgrade notes, and the verification actually performed. Commit the version, notes, and any lockfile changes together. The English file supplies the GitHub Release body.
 
-[Release](../.github/workflows/release.yml) supports two entry points.
+Run `node --import=tsx scripts/release.ts check vX.Y.Z` from the repository root to check release inputs. Run [CI](../.github/workflows/ci.yml) on the release commit for a build without publication. Push `vX.Y.Z` once the commit has entered `main` and is ready to publish. The [Release workflow](../.github/workflows/release.yml) checks the tag, version, platform dependencies, notes, and `main` ancestry before calling CI.
 
-- Push a `vX.Y.Z` tag to build, verify, publish the three npm packages, and create a GitHub Release.
-- Run the Release workflow manually with `publish=false` to build and upload artifacts without publishing. With `publish=true`, select a matching version tag.
+### First release
 
-The tag must match `package.json`. The workflow publishes native packages before the launcher using the CI tarballs. npm versions are immutable. Check which packages were published before rerunning a failed publishing job.
+1. Create the GitHub `npm` environment and allow deployments from `v*` tags. A required reviewer can hold the publish job until the tagged artifacts have been checked. If the repository maintainer will approve their own deployment, keep self-review enabled. See [deployment protection rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+2. Establish ownership of the launcher and both platform packages. For package names absent from npm, sign in as the scope owner and use `npm stage publish <tarball> --access public --tag bootstrap` on each previously checked bootstrap tarball. Use a version distinct from the stable release, since a pending staged version reserves its version number. npm creates a public `0.0.0-stage` placeholder and keeps the bootstrap tarball pending. See [staged publishing](https://docs.npmjs.com/staged-publishing/).
+3. In the settings for **each** package, add an npm GitHub Actions Trusted Publisher with owner `Sanjeever`, repository `computer-mcp`, workflow `release.yml`, environment `npm`, and **Allow npm publish**. Configure these within two days of the first successful OIDC publish. See [npm Trusted Publishers](https://docs.npmjs.com/trusted-publishers/).
+4. Verify the final packages on interactive macOS and Windows desktops, including the actual client launch path and permission prompts outside the server. If deployment approval is enabled, download `release-assets` from the tag run while the publish job is waiting. Check the manifest with `node --import=tsx scripts/release.ts verify vX.Y.Z <directory>` from the tagged checkout before using the tarballs.
 
-Before the first public release, establish package ownership for `name` and `optionalDependencies` in [package.json](../package.json). Initial package creation may require an authenticated bootstrap publication. Configure npm trusted publishing for the repository and [release workflow](../.github/workflows/release.yml), using the environment declared by the publish job. Create that GitHub environment and set its protection rules. The workflow uses OIDC and npm provenance.
+If a placeholder cannot be configured for OIDC, use the same `release-assets` tarballs from the tagged run for a one-time authenticated publication. Stage and approve the two native packages first, then the launcher, using the `latest` tag for this stable version. The publish job verifies the matching npm integrity values and completes the GitHub Release. A manually published version will lack the workflow's automatic npm provenance. Reject pending bootstrap versions once the stable release is live. Configure or refresh Trusted Publishers before the next OIDC release.
+
+### Publication and recovery
+
+The publish job downloads `release-assets`, verifies the included manifest, and creates or resumes an unpublished GitHub Release with the three tarballs. It publishes both native packages before the launcher via npm OIDC with provenance, then makes the Release public. Verify a clean registry install on each supported platform with `npx -y @sanjeever/computer-mcp@X.Y.Z --version`, then connect through the client and run `computer_status`.
+
+If publication fails, use **Re-run failed jobs** on the original run to reuse its `release-assets`. The script skips an npm version if its integrity equals the original tarball and uploads only missing draft assets. Query failures, incomplete or mismatched assets, and conflicting npm versions stop publication. Inspect any incomplete draft upload before removing it. If the original artifact has expired or npm reports conflicting bytes, reconcile the existing publishes and prepare a new version if necessary. npm versions are immutable.
 
 The [platform packaging script](../scripts/platform.ts) includes third-party license notices with the precompiled binaries. The release workflow currently omits Apple Developer ID signing and notarization and Windows Authenticode signing. Verify permission persistence across signed upgrades before documenting it as supported.
