@@ -19,6 +19,18 @@ type clickDesktop struct {
 	menuRegion    *desktop.Rect
 }
 
+type hitDesktop struct {
+	*clickDesktop
+	duringHit func()
+}
+
+func (b *hitDesktop) ClickHit(_ context.Context, p desktop.Point) desktop.ClickHit {
+	if b.duringHit != nil {
+		b.duringHit()
+	}
+	return desktop.ClickHit{DesktopPoint: p, WindowID: "w1", Control: &desktop.HitControl{Role: "pane", Name: "Ribbon"}}
+}
+
 func (b *clickDesktop) ActiveMenu(owner desktop.Window) (desktop.Window, *desktop.Rect) {
 	if b.menu.OwnerID == owner.ID {
 		return b.menu, nil
@@ -165,6 +177,29 @@ func TestUnverifiedMenuOffersRegionWithoutCapturing(t *testing.T) {
 	requireCode(t, response{err: result.err}, "not_active")
 }
 
+func TestClickReportsHitAndRechecksWindowBeforeInput(t *testing.T) {
+	s, b := setupClickDesktop()
+	ctx := context.Background()
+	if r := observe(ctx, s, ObserveArgs{Screenshot: true}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	args := ClickArgs{SnapshotID: s.snapshot.ID, Point: &desktop.Point{X: 125, Y: 50}, ReportHit: true}
+	requireCode(t, click(ctx, s, args), "unsupported_operation")
+	probe := &hitDesktop{clickDesktop: b, duringHit: func() { b.windows[0].Bounds.X++ }}
+	s.backend = probe
+	requireCode(t, click(ctx, s, args), "stale_snapshot")
+	if b.inputs != 0 {
+		t.Fatal("sent input after the target changed during hit testing")
+	}
+	probe.duringHit = nil
+	b.windows[0].Bounds.X--
+	r := click(ctx, s, args)
+	result, ok := r.value.(mouseObservationResult)
+	if r.err != nil || !ok || !result.InputDelivered || result.Hit == nil || result.Hit.Control == nil || result.Hit.Control.Name != "Ribbon" || result.Hit.DesktopPoint != (desktop.Point{X: 150, Y: 200}) || b.inputs != 1 {
+		t.Fatalf("click with hit: %+v, %v", r.value, r.err)
+	}
+}
+
 func TestDesktopClickObservationRequiresImage(t *testing.T) {
 	s, b := setupClickDesktop()
 	b.displays = []desktop.Display{{ID: "main", Bounds: desktop.Rect{X: -800, Width: 800, Height: 400}}}
@@ -235,7 +270,7 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 	_, b := setupClickDesktop()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	e := newEngine(ctx, func() (desktop.Backend, error) { return b, nil })
+	e := newEngine(ctx, func() (desktop.Backend, error) { return &hitDesktop{clickDesktop: b}, nil })
 	defer e.Close()
 	started, release := make(chan struct{}), make(chan struct{})
 	defer close(release)
@@ -253,7 +288,7 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 	done := make(chan response, 1)
 	go func() {
 		done <- e.call(callCtx, "computer_click", func(ctx context.Context, s *state) response {
-			return click(ctx, s, ClickArgs{SnapshotID: snapshot.ID, ElementID: "0", ObserveAfter: &MouseObservation{}})
+			return click(ctx, s, ClickArgs{SnapshotID: snapshot.ID, ElementID: "0", ReportHit: true, ObserveAfter: &MouseObservation{}})
 		})
 	}()
 	select {
@@ -265,7 +300,7 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 	select {
 	case r := <-done:
 		result, ok := r.value.(mouseObservationResult)
-		if r.err != nil || !ok || !result.InputDelivered || result.Observation != nil || !errors.Is(result.err, context.Canceled) {
+		if r.err != nil || !ok || !result.InputDelivered || result.Hit == nil || result.Hit.WindowID != "w1" || result.Observation != nil || !errors.Is(result.err, context.Canceled) {
 			t.Fatalf("canceled click: %+v, %v", r.value, r.err)
 		}
 		if r.timing == nil || r.timing.Stage != "accessibility" {

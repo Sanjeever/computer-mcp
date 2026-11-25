@@ -25,6 +25,7 @@
   "computer_observe": "观察当前或指定窗口，返回有数量上限的无障碍元素和新 snapshot_id。screenshot=true 附带 JPEG 截图，region 须位于窗口内。desktop=true 改为纯截图桌面快照，默认捕获首个显示器，也可指定桌面 region，不传 window_id；适合菜单、Dock、任务栏或无窗口桌面。图片坐标从零开始。新观察使旧引用失效。语义树与截图依次采集，不保证原子一致。",
   "computer_click": "点击最新快照中的 element_id 或图片坐标 point，二者必须且只能提供一个。窗口快照要求 active=true 或 mouse_active=true，且位置尺寸未变；桌面快照检查显示器布局，支持系统 UI 目标。在 Windows 上，使用 element_id 点击已观察到且归属和命中均可验证的弹层控件。独立浮动面板按自身 window_id 观察。可选 hold_keys 要求激活的窗口快照，结束后释放。传入 observe_after 可在点击送达后取得新观察，包括切到前台的 Windows 所属对话框。若同时返回 input_delivered=true 和 observation_error，请重新观察再决定是否重复输入。",
   "observe_after": "点击或拖拽送达后取得新观察。用 {} 读取控件，或用 {\"screenshot\":true} 附带 JPEG。归属可验证的 Windows 菜单使用菜单范围内的屏幕截图。若返回 observation_error.suggested_region，可将它传给桌面观察。桌面快照要求 screenshot=true。下一步使用 observation 中的 snapshot_id。",
+  "report_hit": "适用于 Windows。点击送达后，返回投递前的桌面坐标、命中窗口和可取得的 UI Automation 控件。通过后续观察确认应用的响应。",
   "input_observation_failed": "输入已发送，后续观察失败。请先重新观察目标，再决定是否重复输入。",
   "computer_move": "将鼠标移动到最新快照中的图片坐标，不点击。可选 hover_ms 在该点等待后返回，用于悬停菜单或提示；再次观察以检查结果。窗口快照要求 active=true 或 mouse_active=true，且目标点未被遮挡；桌面快照检查显示器布局。原生失败或取消导致投递结果不确定时，快照仍被消耗。",
   "computer_type": "在激活的 window_id 当前焦点控件插入 Unicode 文本。先检查焦点，可能位于查找框或对话框。文本按应用行为插入光标位置或替换当前选区，不使用剪贴板。Windows 将 LF、CRLF 和单独 CR 分别作为一次 Enter 发送，在单行控件中可能触发提交。替换全文前须显式全选。input_delivered 表示事件已投递，不保证文本已插入。请观察结果；若未变化，先检查焦点和应用状态，再决定是否重复输入。",

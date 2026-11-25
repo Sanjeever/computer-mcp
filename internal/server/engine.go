@@ -43,11 +43,11 @@ type response struct {
 	timing *stageTiming
 }
 type job struct {
-	ctx            context.Context
-	run            func(context.Context, *state) response
-	result         chan response
-	inputDelivered atomic.Bool
-	progress       requestProgress
+	ctx           context.Context
+	run           func(context.Context, *state) response
+	result        chan response
+	mouseDelivery atomic.Pointer[mouseObservationResult]
+	progress      requestProgress
 }
 type Engine struct {
 	jobs       chan *job
@@ -57,10 +57,10 @@ type Engine struct {
 	logTimings bool
 }
 type state struct {
-	backend        desktop.Backend
-	snapshot       *Snapshot
-	previous       *Snapshot
-	inputDelivered *atomic.Bool
+	backend       desktop.Backend
+	snapshot      *Snapshot
+	previous      *Snapshot
+	mouseDelivery *atomic.Pointer[mouseObservationResult]
 }
 
 func NewEngine(parent context.Context) *Engine {
@@ -122,9 +122,9 @@ func newEngine(parent context.Context, open func() (desktop.Backend, error)) *En
 				if err != nil {
 					r.err = err
 				} else {
-					s.inputDelivered = &j.inputDelivered
+					s.mouseDelivery = &j.mouseDelivery
 					r = j.run(j.ctx, s)
-					s.inputDelivered = nil
+					s.mouseDelivery = nil
 				}
 				if err = lock.Unlock(); err != nil && r.err == nil {
 					r.err = err
@@ -177,8 +177,8 @@ func (j *job) interrupted(err error) response {
 	}
 	// A blocked native observation still holds the worker. The caller can
 	// learn that the input was delivered without waiting for the provider.
-	if j.inputDelivered.Load() {
-		return mouseObservationFailed(err)
+	if delivered := j.mouseDelivery.Load(); delivered != nil {
+		return delivered.failed(err, nil)
 	}
 	return response{err: err}
 }
@@ -278,6 +278,7 @@ type ClickArgs struct {
 	SnapshotID   string            `json:"snapshot_id"`
 	ElementID    string            `json:"element_id,omitempty"`
 	Point        *desktop.Point    `json:"point,omitempty"`
+	ReportHit    bool              `json:"report_hit,omitempty"`
 	Button       string            `json:"button,omitempty"`
 	Count        int               `json:"count,omitempty"`
 	HoldKeys     []string          `json:"hold_keys,omitempty"`
@@ -669,11 +670,54 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	if a.ObserveAfter != nil && snap.Window == nil && !a.ObserveAfter.Screenshot {
 		return invalid("desktop observe_after requires screenshot=true")
 	}
+	p, err := clickPoint(ctx, s.backend, snap, a)
+	if err != nil {
+		return response{err: err}
+	}
+	var hit *desktop.ClickHit
+	if a.ReportHit {
+		observer, ok := s.backend.(desktop.ClickHitObserver)
+		if !ok {
+			return response{err: desktop.Fail("unsupported_operation", "report_hit is available on Windows")}
+		}
+		desktop.ReportStage(ctx, "hit_test")
+		value := observer.ClickHit(ctx, p)
+		if err := ctx.Err(); err != nil {
+			return response{err: err}
+		}
+		// UIA can block while the target or display layout changes.
+		if _, err := s.mouseSnapshot(a.SnapshotID, a.HoldKeys); err != nil {
+			return response{err: err}
+		}
+		if _, err := clickPoint(ctx, s.backend, snap, a); err != nil {
+			return response{err: err}
+		}
+		if value.Control != nil {
+			value.Control.Role = clip(value.Control.Role, 128)
+			value.Control.Name = clip(value.Control.Name, 512)
+		}
+		hit = &value
+	}
+	s.snapshot = nil
+	desktop.ReportStage(ctx, "input")
+	err = s.backend.Input(ctx, "click", desktop.Input{Point: p, Button: a.Button, Count: a.Count, HoldKeys: a.HoldKeys})
+	if err != nil || a.ObserveAfter == nil && hit == nil {
+		return delivered(err)
+	}
+	result := s.confirmMouseInput(hit)
+	if a.ObserveAfter == nil {
+		return response{value: result}
+	}
+	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter, result)
+}
+
+func clickPoint(ctx context.Context, backend desktop.Backend, snap *Snapshot, a ClickArgs) (desktop.Point, error) {
 	var p desktop.Point
+	var err error
 	if a.Point != nil {
 		p, err = imagePoint(snap, *a.Point)
 		if err == nil && snap.Window != nil {
-			err = s.backend.CheckPoint(*snap.Window, p, snap.CaptureMode == "screen")
+			err = backend.CheckPoint(*snap.Window, p, snap.CaptureMode == "screen")
 		}
 	} else {
 		var old *desktop.Element
@@ -684,27 +728,18 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 			}
 		}
 		if old == nil {
-			return response{err: desktop.Fail("stale_snapshot", a.ElementID)}
+			return p, desktop.Fail("stale_snapshot", a.ElementID)
 		}
 		var now desktop.Element
-		now, err = s.backend.Resolve(a.ElementID)
+		now, err = backend.Resolve(a.ElementID)
 		if err == nil && (now.Role != old.Role || clip(now.Name, 512) != old.Name || now.Bounds != old.Bounds || !now.Enabled || !now.Bounds.Valid()) {
 			err = desktop.Fail("stale_snapshot", a.ElementID)
 		}
 		if err == nil {
-			p, err = s.backend.ElementClickPoint(ctx, *snap.Window, now)
+			p, err = backend.ElementClickPoint(ctx, *snap.Window, now)
 		}
 	}
-	if err != nil {
-		return response{err: err}
-	}
-	s.snapshot = nil
-	desktop.ReportStage(ctx, "input")
-	err = s.backend.Input(ctx, "click", desktop.Input{Point: p, Button: a.Button, Count: a.Count, HoldKeys: a.HoldKeys})
-	if err != nil || a.ObserveAfter == nil {
-		return delivered(err)
-	}
-	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter)
+	return p, err
 }
 func (s *state) mouseSnapshot(id string, keys []string) (*Snapshot, error) {
 	seen := map[string]bool{}
@@ -869,7 +904,7 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 	if err != nil || a.ObserveAfter == nil {
 		return delivered(err)
 	}
-	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter)
+	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter, s.confirmMouseInput(nil))
 }
 func wait(ctx context.Context, s *state, a WaitArgs) response {
 	if a.WindowID == "" {

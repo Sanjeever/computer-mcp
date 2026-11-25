@@ -454,6 +454,46 @@ func (b *winBackend) CheckPoint(target Window, p Point, _ bool) error {
 	return windowsPointFailure(target, point, hit, root, "other_window_at_point", nil)
 }
 
+func (b *winBackend) ClickHit(ctx context.Context, p Point) ClickHit {
+	point := w.POINT{X: int32(p.X), Y: int32(p.Y)}
+	hit := w.WindowFromPoint(point)
+	result := ClickHit{
+		DesktopPoint: Point{X: float64(point.X), Y: float64(point.Y)},
+		WindowID:     windowID(w.GetAncestor(hit, w.GA_ROOT)),
+	}
+	if hit == 0 {
+		result.ControlError = "no window at point"
+		return result
+	}
+	var element *w.IUIAutomationElement
+	if err := hr(b.automation.ElementFromPointBuildCache(point, b.cache, &element)); err != nil {
+		result.ControlError = err.Error()
+		return result
+	}
+	if element == nil {
+		result.ControlError = "UIA reported no element at point"
+		return result
+	}
+	defer element.Release()
+	if ctx.Err() != nil {
+		return result
+	}
+	node, err := cachedNode(element, "", "")
+	if err != nil {
+		result.ControlError = err.Error()
+		return result
+	}
+	if w.WindowFromPoint(point) != hit || !node.Bounds.Contains(result.DesktopPoint) {
+		result.ControlError = "UIA element bounds or window hit could not be verified"
+		return result
+	}
+	result.Control = &HitControl{Role: node.Role, Bounds: node.Bounds}
+	if !node.Password {
+		result.Control.Name = node.Name
+	}
+	return result
+}
+
 func windowsPointFailure(target Window, point w.POINT, hit, root w.HWND, reason string, cause error) error {
 	detail := fmt.Sprintf("target_window_id=%s; desktop_point=(%d,%d)", target.ID, point.X, point.Y)
 	if hit == 0 || root == 0 {

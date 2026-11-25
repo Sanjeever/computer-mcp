@@ -71,6 +71,8 @@ When Windows can verify a visible menu's owner, the follow-up identifies it with
 
 On Windows, use `element_id` for an observed popup control, including one outside the main window. The server verifies the popup's ownership and that the hit matches the requested control before sending a mouse click. After `stale_snapshot` during a popup transition, observe the window again and use the new references. For a visible popup without a verified element, observe a small desktop region around it and use that image's coordinates.
 
+On Windows, `computer_click` accepts `report_hit:true` to return `hit` after confirmed delivery. It contains the resolved `desktop_point`, the hit's top-level `window_id` when available, and the UI Automation `control` with `role`, optional `name`, and desktop `bounds`. `control_error` explains an unavailable control. The hit is sampled before dispatch. Use a subsequent observation to check how the application responded.
+
 On macOS, observe an open menu with a window screenshot using `capture_mode:"screen"`. Coordinate clicks and mouse moves can target a menu inside the image when accessibility confirms it belongs to that window. If the menu extends outside the window or its owner cannot be verified, observe a small desktop region around the visible menu.
 
 For the Dock, taskbar, menus outside a verified window, or an empty desktop, use `computer_observe({"desktop":true})`. This returns a screenshot of the first display without a window or semantic elements. Set `region` to a desktop rectangle from `computer_status` to select another display or capture across displays. Desktop coordinate input checks the display layout and can operate without a focused window.

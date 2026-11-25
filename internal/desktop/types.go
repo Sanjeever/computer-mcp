@@ -139,6 +139,23 @@ type MenuObserver interface {
 	ActiveMenu(owner Window) (verified Window, suggestedRegion *Rect)
 }
 
+type ClickHit struct {
+	DesktopPoint Point       `json:"desktop_point"`
+	WindowID     string      `json:"window_id,omitempty"`
+	Control      *HitControl `json:"control,omitempty"`
+	ControlError string      `json:"control_error,omitempty"`
+}
+
+type HitControl struct {
+	Role   string `json:"role"`
+	Name   string `json:"name,omitempty"`
+	Bounds Rect   `json:"bounds"`
+}
+
+type ClickHitObserver interface {
+	ClickHit(context.Context, Point) ClickHit
+}
+
 type Error struct {
 	Code   string
 	Detail string

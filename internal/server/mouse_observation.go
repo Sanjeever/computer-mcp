@@ -13,26 +13,33 @@ type MouseObservation struct {
 }
 
 type mouseObservationResult struct {
-	InputDelivered   bool         `json:"input_delivered"`
-	Observation      *Snapshot    `json:"observation,omitempty"`
-	ObservationError *toolFailure `json:"observation_error,omitempty"`
+	InputDelivered   bool              `json:"input_delivered"`
+	Hit              *desktop.ClickHit `json:"hit,omitempty"`
+	Observation      *Snapshot         `json:"observation,omitempty"`
+	ObservationError *toolFailure      `json:"observation_error,omitempty"`
 	err              error
 	suggestedRegion  *desktop.Rect
 }
 
-func mouseObservationFailed(err error) response {
-	return response{value: mouseObservationResult{InputDelivered: true, err: err}}
+func (r mouseObservationResult) failed(err error, region *desktop.Rect) response {
+	r.err, r.suggestedRegion = err, region
+	return response{value: r}
 }
 
-func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, options MouseObservation) response {
-	if s.inputDelivered != nil {
-		s.inputDelivered.Store(true)
+func (s *state) confirmMouseInput(hit *desktop.ClickHit) mouseObservationResult {
+	result := mouseObservationResult{InputDelivered: true, Hit: hit}
+	if s.mouseDelivery != nil {
+		s.mouseDelivery.Store(&result)
 	}
+	return result
+}
+
+func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, options MouseObservation, result mouseObservationResult) response {
 	// Native events can be queued before the application processes them.
 	desktop.ReportStage(ctx, "observation_delay")
 	select {
 	case <-ctx.Done():
-		return mouseObservationFailed(ctx.Err())
+		return result.failed(ctx.Err(), nil)
 	case <-time.After(100 * time.Millisecond):
 	}
 	a := ObserveArgs{Desktop: source.Window == nil, Screenshot: options.Screenshot}
@@ -40,7 +47,7 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 	if a.Desktop {
 		desktop.ReportStage(ctx, "display_layout")
 		if err := checkDisplayLayout(s.backend, source.Displays); err != nil {
-			return mouseObservationFailed(err)
+			return result.failed(err, nil)
 		}
 		a.Region = &source.Region
 		a.MaxWidth = source.maxWidth
@@ -48,7 +55,7 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 		desktop.ReportStage(ctx, "window_list")
 		w, region, err := mouseObservationWindow(s.backend, *source.Window)
 		if err != nil {
-			return response{value: mouseObservationResult{InputDelivered: true, err: err, suggestedRegion: region}}
+			return result.failed(err, region)
 		}
 		target = &w
 		if a.Screenshot && w.Menu {
@@ -70,9 +77,9 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 	r := observeTarget(ctx, s, a, target)
 	if r.err != nil {
 		if target != nil && target.Menu {
-			return response{value: mouseObservationResult{InputDelivered: true, err: r.err, suggestedRegion: &target.Bounds}}
+			return result.failed(r.err, &target.Bounds)
 		}
-		return mouseObservationFailed(r.err)
+		return result.failed(r.err, nil)
 	}
 	var err error
 	if target == nil {
@@ -91,9 +98,10 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 	}
 	if err != nil {
 		s.snapshot, s.previous = nil, base
-		return mouseObservationFailed(err)
+		return result.failed(err, nil)
 	}
-	return response{value: mouseObservationResult{InputDelivered: true, Observation: s.snapshot}, image: r.image}
+	result.Observation = s.snapshot
+	return response{value: result, image: r.image}
 }
 
 func checkDisplayLayout(b desktop.Backend, displays []desktop.Display) error {

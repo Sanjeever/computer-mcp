@@ -71,6 +71,8 @@ Windows 能确认可见菜单归属时，后续观察以 `window.menu:true` 和 
 
 在 Windows 上，使用 `element_id` 点击观察到的弹层控件，控件也可位于主窗口之外。服务在发送鼠标点击前验证弹层归属，并确认实际命中请求的控件。若弹层切换时返回 `stale_snapshot`，请重新观察窗口并使用新引用。对于缺少可验证元素的可见弹层，可观察其周围的小范围桌面区域，并使用该图片的坐标。
 
+在 Windows 上，可给 `computer_click` 传入 `report_hit:true`，在确认送达后返回 `hit`。其中包含换算后的 `desktop_point`、可取得的命中顶层窗口 `window_id`，以及 UI Automation 识别到的 `control`，包括 `role`、可选的 `name` 和桌面坐标 `bounds`。`control_error` 说明为何无法提供控件。命中信息在投递前采样，应用如何响应需通过后续观察确认。
+
 在 macOS 上，使用 `capture_mode:"screen"` 取得包含已打开菜单的窗口截图。无障碍接口能确认菜单归属时，可在图内用坐标点击菜单或移动鼠标。菜单超出窗口或归属无法确认时，观察可见菜单周围的小范围桌面区域。
 
 操作 Dock、任务栏、无法验证窗口归属的菜单或无窗口桌面时，使用 `computer_observe({"desktop":true})`。该模式返回首个显示器截图，不包含窗口或语义元素。可根据 `computer_status` 的桌面坐标设置 `region`，选择其他显示器或跨显示器截图。桌面坐标输入检查显示器布局，可在没有活动窗口时操作。

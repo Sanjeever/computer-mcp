@@ -331,6 +331,7 @@ type windowsObservation struct {
 
 type windowsClickResult struct {
 	InputDelivered   bool               `json:"input_delivered"`
+	Hit              *ClickHit          `json:"hit"`
 	Observation      windowsObservation `json:"observation"`
 	ObservationError json.RawMessage    `json:"observation_error"`
 }
@@ -441,7 +442,10 @@ func TestNativeWindowsMenuObservation(t *testing.T) {
 	center := winRect(editorBounds).Center()
 	point := Point{X: (center.X - image.Region.X) * float64(image.ImageWidth) / image.Region.Width, Y: (center.Y - image.Region.Y) * float64(image.ImageHeight) / image.Region.Height}
 	var opened windowsClickResult
-	call("computer_click", map[string]any{"snapshot_id": image.SnapshotID, "button": "right", "point": point, "observe_after": map[string]any{"screenshot": true}}, &opened)
+	call("computer_click", map[string]any{"snapshot_id": image.SnapshotID, "button": "right", "point": point, "report_hit": true, "observe_after": map[string]any{"screenshot": true}}, &opened)
+	if opened.Hit == nil || opened.Hit.WindowID != fixture.Window.ID || opened.Hit.Control == nil || opened.Hit.Control.Role == "" || opened.Hit.Control.Bounds != winRect(editorBounds) || !opened.Hit.Control.Bounds.Contains(opened.Hit.DesktopPoint) {
+		t.Fatalf("expected a pre-dispatch hit on the fixture editor: %+v", opened.Hit)
+	}
 	menu := opened.Observation
 	if !opened.InputDelivered || !menu.Window.Menu || menu.Window.PID != fixture.Window.PID || menu.CaptureMode != "screen" || menu.Region != menu.Window.Bounds || menu.ImageWidth == 0 || menu.ImageHeight == 0 {
 		t.Fatalf("expected a scoped menu screenshot, got %+v (%s)", menu, opened.ObservationError)
