@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/Sanjeever/computer-mcp/internal/desktop"
@@ -55,6 +56,43 @@ func TestTruncatedDiffIsNotComplete(t *testing.T) {
 	d := diffSnapshots(old, &Snapshot{ID: "new"})
 	if d.Complete || len(d.Removed) != 1 {
 		t.Fatalf("truncated diff: %+v", d)
+	}
+}
+
+func TestObservationReportsTraversalLimits(t *testing.T) {
+	s, b := setup()
+	b.truncation = desktop.TruncatedTimeLimit | desktop.TruncatedProviderError
+	r := observe(context.Background(), s, ObserveArgs{})
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if !s.snapshot.Truncated || !slices.Equal(s.snapshot.TruncationReasons, []string{"time_limit", "provider_error"}) {
+		t.Fatalf("truncation: %+v", s.snapshot)
+	}
+}
+
+func TestWindowScreenshotOnlySkipsTreeAndKeepsGuard(t *testing.T) {
+	s, b := setupClickDesktop()
+	ctx := context.Background()
+	region := desktop.Rect{X: 0, Y: 120, Width: 500, Height: 250}
+	r := observe(ctx, s, ObserveArgs{WindowID: "w1", Region: &region, ScreenshotOnly: true})
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	snap := s.snapshot
+	if b.calls != 0 || !snap.ScreenshotOnly || snap.Truncated || snap.Region != region || len(snap.Elements) != 0 || snap.ImageWidth == 0 || len(r.image) == 0 {
+		t.Fatalf("image-only observation: %+v, traversals=%d", snap, b.calls)
+	}
+	requireCode(t, observe(ctx, s, ObserveArgs{SinceSnapshotID: snap.ID}), "invalid_argument")
+	requireCode(t, observe(ctx, s, ObserveArgs{ScreenshotOnly: true, Role: "button"}), "invalid_argument")
+	point := &desktop.Point{X: 100, Y: 30}
+	args := ClickArgs{SnapshotID: snap.ID, Point: point, ObserveAfter: &MouseObservation{Screenshot: true}}
+	b.pointErr = desktop.Fail("target_obscured", "cover")
+	requireCode(t, click(ctx, s, args), "target_obscured")
+	b.pointErr = nil
+	next := requireClickObservation(t, click(ctx, s, args))
+	if b.calls != 0 || b.inputs != 1 || !next.ScreenshotOnly || next.Region != region || b.input.Point != (desktop.Point{X: 100, Y: 150}) {
+		t.Fatalf("image-only follow-up: %+v, traversals=%d, input=%+v", next, b.calls, b.input)
 	}
 }
 

@@ -22,22 +22,24 @@ import (
 const snapshotLifetime = 60 * time.Second
 
 type Snapshot struct {
-	ID           string                   `json:"snapshot_id"`
-	Window       *desktop.Window          `json:"window,omitempty"`
-	Displays     []desktop.Display        `json:"displays,omitempty"`
-	Elements     []desktop.Element        `json:"elements"`
-	Truncated    bool                     `json:"truncated"`
-	Region       desktop.Rect             `json:"region"`
-	ImageWidth   int                      `json:"image_width,omitempty"`
-	ImageHeight  int                      `json:"image_height,omitempty"`
-	Created      time.Time                `json:"created_at"`
-	ExpiresAt    time.Time                `json:"expires_at"`
-	Scope        desktop.ObserveOptions   `json:"-"`
-	CaptureMode  string                   `json:"capture_mode,omitempty"`
-	OCR          []desktop.RecognizedText `json:"ocr,omitempty"`
-	OCRTruncated bool                     `json:"ocr_truncated,omitempty"`
-	OCRRequested bool                     `json:"-"`
-	maxWidth     int
+	ID                string                   `json:"snapshot_id"`
+	Window            *desktop.Window          `json:"window,omitempty"`
+	Displays          []desktop.Display        `json:"displays,omitempty"`
+	Elements          []desktop.Element        `json:"elements"`
+	Truncated         bool                     `json:"truncated"`
+	TruncationReasons []string                 `json:"truncation_reasons,omitempty"`
+	Region            desktop.Rect             `json:"region"`
+	ImageWidth        int                      `json:"image_width,omitempty"`
+	ImageHeight       int                      `json:"image_height,omitempty"`
+	ScreenshotOnly    bool                     `json:"screenshot_only,omitempty"`
+	Created           time.Time                `json:"created_at"`
+	ExpiresAt         time.Time                `json:"expires_at"`
+	Scope             desktop.ObserveOptions   `json:"-"`
+	CaptureMode       string                   `json:"capture_mode,omitempty"`
+	OCR               []desktop.RecognizedText `json:"ocr,omitempty"`
+	OCRTruncated      bool                     `json:"ocr_truncated,omitempty"`
+	OCRRequested      bool                     `json:"-"`
+	maxWidth          int
 }
 
 func (s *Snapshot) stamp() {
@@ -275,6 +277,7 @@ type ObserveArgs struct {
 	Desktop         bool          `json:"desktop,omitempty"`
 	WindowID        string        `json:"window_id,omitempty"`
 	Screenshot      bool          `json:"screenshot,omitempty"`
+	ScreenshotOnly  bool          `json:"screenshot_only,omitempty"`
 	MaxElements     int           `json:"max_elements,omitempty"`
 	MaxWidth        int           `json:"max_width,omitempty"`
 	Region          *desktop.Rect `json:"region,omitempty"`
@@ -426,6 +429,13 @@ func observe(ctx context.Context, s *state, a ObserveArgs) response {
 }
 
 func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop.Window) response {
+	hasSemanticFilters := a.RootID != "" || a.Text != "" || a.Role != "" || a.Compact || a.MaxDepth != 0 || a.SinceSnapshotID != ""
+	if a.ScreenshotOnly {
+		if a.Desktop || hasSemanticFilters {
+			return invalid("screenshot_only requires window mode without semantic filters or diffs")
+		}
+		a.Screenshot = true
+	}
 	if a.OCR && !a.Screenshot && !a.Desktop {
 		return invalid("ocr requires screenshot=true")
 	}
@@ -477,6 +487,9 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	}
 	if a.SinceSnapshotID != "" && (s.previous == nil || s.previous.ID != a.SinceSnapshotID) {
 		return response{err: desktop.Fail("stale_snapshot", "diff base is not the latest observation")}
+	}
+	if a.SinceSnapshotID != "" && s.previous.ScreenshotOnly {
+		return invalid("diff requires a base observation with accessibility elements")
 	}
 	if a.MaxElements == 0 {
 		a.MaxElements = 200
@@ -571,7 +584,11 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 		if a.CaptureMode == "window" {
 			return invalid("menu screenshots require capture_mode=screen")
 		}
+		if hasSemanticFilters {
+			return invalid("menu screenshots do not accept semantic filters or diffs")
+		}
 		a.CaptureMode = "screen"
+		a.ScreenshotOnly = true
 	}
 	region := w.Bounds
 	if a.Region != nil {
@@ -585,9 +602,9 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 		return invalid("diff requires the same window and observation filters")
 	}
 	var elements []desktop.Element
-	var truncated bool
+	var truncated desktop.Truncation
 	var err error
-	if !w.Menu || !a.Screenshot {
+	if !a.ScreenshotOnly {
 		desktop.ReportStage(ctx, "accessibility")
 		elements, truncated, err = s.backend.Observe(ctx, w, options)
 		if err != nil {
@@ -609,7 +626,10 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	if _, err = rand.Read(token); err != nil {
 		return response{err: err}
 	}
-	snap := &Snapshot{ID: hex.EncodeToString(token), Window: &w, Elements: elements, Truncated: truncated, Region: region, Scope: options}
+	snap := &Snapshot{
+		ID: hex.EncodeToString(token), Window: &w, Elements: elements, Region: region, Scope: options,
+		Truncated: truncated != 0, TruncationReasons: truncated.Reasons(), ScreenshotOnly: a.ScreenshotOnly,
+	}
 	var data []byte
 	if a.Screenshot {
 		var capture desktop.Capture

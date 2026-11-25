@@ -63,6 +63,7 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 		} else if a.Screenshot && w.ID == source.Window.ID {
 			a.CaptureMode = source.CaptureMode
 			a.MaxWidth = source.maxWidth
+			a.ScreenshotOnly = source.ScreenshotOnly
 			if source.Scope.Region != nil && source.ImageWidth > 0 {
 				region := source.Region
 				region.X += w.Bounds.X - source.Window.Bounds.X

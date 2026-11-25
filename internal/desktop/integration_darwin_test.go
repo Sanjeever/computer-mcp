@@ -119,7 +119,7 @@ func TestNativeFixture(t *testing.T) {
 		t.Fatalf("focus: %+v, %v", focused, err)
 	}
 	subtree, truncated, err := b.Observe(ctx, target, ObserveOptions{Limit: 20, MaxDepth: 64, RootID: input.ID})
-	if err != nil || truncated || len(subtree) != 1 || subtree[0].ID != input.ID {
+	if err != nil || truncated != 0 || len(subtree) != 1 || subtree[0].ID != input.ID {
 		t.Fatalf("subtree identity: %+v, truncated=%v, %v", subtree, truncated, err)
 	}
 	nodes, _, err = b.Observe(ctx, target, ObserveOptions{Limit: 100, MaxDepth: 64})

@@ -295,43 +295,55 @@ func runtimeID(e *w.IUIAutomationElement) (string, error) {
 	w.SafeArrayUnaccessData(array)
 	return id, nil
 }
-func (b *winBackend) Observe(ctx context.Context, target Window, options ObserveOptions) ([]Element, bool, error) {
+func (b *winBackend) Observe(ctx context.Context, target Window, options ObserveOptions) ([]Element, Truncation, error) {
 	h, err := hwnd(target.ID)
 	if err != nil {
-		return nil, false, err
+		return nil, 0, err
 	}
 	var root *w.IUIAutomationElement
 	if options.RootID != "" {
 		previous := b.elements[options.RootID]
 		if previous == nil {
-			return nil, false, Fail("stale_snapshot", "subtree root")
+			return nil, 0, Fail("stale_snapshot", "subtree root")
 		}
 		err = hr(previous.BuildUpdatedCache(b.cache, &root))
 	} else {
 		err = hr(b.automation.ElementFromHandleBuildCache(h, b.cache, &root))
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, 0, err
+	}
+	if root == nil {
+		return nil, 0, Fail("native_error", "UIA reported no root element")
 	}
 	defer root.Release()
 	b.clear()
 	b.elements = map[string]*w.IUIAutomationElement{}
 	out := []Element{}
-	truncated := false
+	var truncated Truncation
 	deadline := time.Now().Add(3 * time.Second)
 	visited := map[string]bool{}
+	scanned := 0
 	full := func() bool {
-		return len(out) >= options.Limit || len(visited) >= 5000 || time.Now().After(deadline) || ctx.Err() != nil
+		switch {
+		case ctx.Err() != nil:
+		case len(out) >= options.Limit:
+			truncated |= TruncatedElementLimit
+		case scanned >= 5000:
+			truncated |= TruncatedNodeLimit
+		case time.Now().After(deadline):
+			truncated |= TruncatedTimeLimit
+		default:
+			return false
+		}
+		return true
 	}
 	var visit func(*w.IUIAutomationElement, string, int)
 	visit = func(e *w.IUIAutomationElement, parent string, depth int) {
-		if full() {
-			truncated = true
-			return
-		}
+		scanned++
 		id, err := runtimeID(e)
 		if err != nil {
-			truncated = true
+			truncated |= TruncatedProviderError
 			return
 		}
 		if visited[id] {
@@ -340,7 +352,7 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 		visited[id] = true
 		n, err := cachedNode(e, id, parent)
 		if err != nil {
-			truncated = true
+			truncated |= TruncatedProviderError
 		} else if options.Includes(n) {
 			e.AddRef()
 			b.elements[id] = e
@@ -349,13 +361,17 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 		}
 		var child *w.IUIAutomationElement
 		if b.walker.GetFirstChildElementBuildCache(e, b.cache, &child) < 0 {
-			truncated = true
+			truncated |= TruncatedProviderError
 			return
 		}
 		for child != nil {
-			if full() || depth >= options.MaxDepth {
+			if full() {
 				child.Release()
-				truncated = true
+				return
+			}
+			if depth >= options.MaxDepth {
+				child.Release()
+				truncated |= TruncatedDepthLimit
 				return
 			}
 			visit(child, parent, depth+1)
@@ -363,13 +379,15 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 			code := b.walker.GetNextSiblingElementBuildCache(child, b.cache, &next)
 			child.Release()
 			if code < 0 {
-				truncated = true
+				truncated |= TruncatedProviderError
 				return
 			}
 			child = next
 		}
 	}
-	visit(root, "", 0)
+	if !full() {
+		visit(root, "", 0)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, truncated, err
 	}

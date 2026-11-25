@@ -111,6 +111,8 @@ Windows 可能拒绝前台激活。此时返回 `activation_failed`，并在能�
 
 观察支持区分大小写的 `text` 子串、忽略大小写精确匹配的原生 `role`、`region`、`compact:true` 和 `max_depth`（1～64，默认 64）。`compact` 省略无名称、无值且未聚焦的结构容器，继续遍历其后代。不截图时也可用 `region` 筛选相交的语义元素。通过 `root_id` 和当前 `snapshot_id` 可限定子树。
 
+窗口观察可设 `screenshot_only:true`，直接返回 JPEG 和可操作的窗口快照，省去无障碍遍历。该选项隐含 `screenshot:true`，支持 `region`、`max_width` 和 `capture_mode` 等图片设置。语义筛选和差异观察需要遍历无障碍树。同一窗口的 `observe_after` 截图会沿用纯截图模式，坐标输入仍需通过几何和命中校验。
+
 传入最新一次成功观察的 `since_snapshot_id` 可获取差异，要求该观察为窗口模式，且窗口、筛选条件、元素预算及 OCR 设置相同。输入消耗可操作引用后，该观察仍可作为差异基准。此时 `elements` 包含新增和变化节点，移除 `removed_element_ids` 后按 `element_order` 重建当前有界结果。`diff_complete:false` 表示至少一次观察发生截断，节点从结果消失不代表从应用消失。后续操作均须使用新 `snapshot_id`，未变化的元素也一样。原生身份变化表示为删除和新增。差异减少响应大小，不减少原生遍历工作。
 
 macOS 可通过 `ocr:true` 对返回截图执行本地 Vision 识别，窗口观察需同时设置 `screenshot:true`。结果包含受 `max_elements` 限制的 `ocr` 文本区域、置信度和图片坐标，超出预算时标记 `ocr_truncated`。窗口捕获模式下，无名称且无 AX 值的控件可获得 `ocr_text`，原生名称和点击校验保持独立。屏幕截图中的文字可能来自覆盖窗口，因此以独立 OCR 区域返回。OCR 结果会省略与语义结果中密码控件相交的文本；其他可见敏感文本仍可能出现，尤其是纯截图或筛选观察。OCR 按需启用，会增加识别耗时，不上传图片。`computer_status.ocr` 表示支持状态，当前 npm Windows 分发版请求 OCR 会返回 `unsupported_operation`。
@@ -118,6 +120,7 @@ macOS 可通过 `ocr:true` 对返回截图执行本地 Vision 识别，窗口观
 ## 限制与行为
 
 - 默认观察 200 个元素，最多 1,000 个。树遍历最多扫描 5,000 个节点，预算为三秒，未完成时返回 `truncated`。名称和值均有长度上限，原生 provider 阻塞可能超出遍历预算。
+- Windows 遍历未完成时会返回 `truncation_reasons`。`element_limit`、`node_limit`、`time_limit` 和 `depth_limit` 分别对应元素数、扫描节点数、遍历时限和深度上限。`provider_error` 表示 UI Automation 读取部分树失败。
 - 截图默认最大宽度 1,440，可设为 320～2,560，高度不超过 2,560。窗口观察默认 `capture_mode:"window"`，macOS 使用 ScreenCaptureKit，Windows 使用 PrintWindow。`capture_mode:"screen"` 采集可见桌面区域及覆盖窗口，桌面模式固定使用 screen。Windows 应用需支持 PrintWindow 渲染，不会自动降级为屏幕截图。截图以 MCP 图片内容返回，不写入磁盘。窗口源缓冲区及 Windows 屏幕区域最多 4,000 万像素。
 - 窗口鼠标输入复核窗口几何位置与就绪状态，元素点击还会复核元素。命中检查覆盖点击、移动、滚动位置及所有拖动路径点。外部变化仍可能与检查发生竞争，路径点之间也不会逐像素检查。命中检查失败返回 `target_obscured`。Windows 的 `detail` 包含原因、桌面点及可用的目标窗口、命中窗口和所属窗口 ID。macOS 可给出命中角色和窗口 ID，或说明无法验证归属的原因。
 - 请求预算为 15 秒，包含排队时间。单个工作线程持有用户级文件锁时执行桌面请求。`busy` 表示本进程 16 项队列已满，或其他实例持有锁。原生调用超时后，仍占用工作线程和锁直到返回。

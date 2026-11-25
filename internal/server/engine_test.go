@@ -29,15 +29,16 @@ type fakeDesktop struct {
 	captureMode  string
 	ocr          []desktop.RecognizedText
 	ocrSupported bool
+	truncation   desktop.Truncation
 }
 
 func (b *fakeDesktop) Status() (desktop.Status, error) {
 	return desktop.Status{Displays: b.displays, OCR: b.ocrSupported}, nil
 }
 func (b *fakeDesktop) Windows() ([]desktop.Window, error) { return b.windows, b.err }
-func (b *fakeDesktop) Observe(context.Context, desktop.Window, desktop.ObserveOptions) ([]desktop.Element, bool, error) {
+func (b *fakeDesktop) Observe(context.Context, desktop.Window, desktop.ObserveOptions) ([]desktop.Element, desktop.Truncation, error) {
 	b.calls++
-	return b.nodes, false, b.err
+	return b.nodes, b.truncation, b.err
 }
 func (b *fakeDesktop) Resolve(id string) (desktop.Element, error) {
 	for _, n := range b.nodes {

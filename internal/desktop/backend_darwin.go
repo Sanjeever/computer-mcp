@@ -61,16 +61,19 @@ func (b *macBackend) Windows() ([]Window, error) {
 	err := macCall("windows", nil, &r)
 	return r.Windows, err
 }
-func (b *macBackend) Observe(ctx context.Context, w Window, options ObserveOptions) ([]Element, bool, error) {
+func (b *macBackend) Observe(ctx context.Context, w Window, options ObserveOptions) ([]Element, Truncation, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, false, err
+		return nil, 0, err
 	}
 	var r struct {
 		Elements  []Element `json:"elements"`
 		Truncated bool      `json:"truncated"`
 	}
 	err := macCall("observe", map[string]any{"window_id": w.ID, "options": options}, &r)
-	return r.Elements, r.Truncated, err
+	if r.Truncated {
+		return r.Elements, TruncatedUnspecified, err
+	}
+	return r.Elements, 0, err
 }
 func (b *macBackend) Resolve(id string) (Element, error) {
 	var e Element

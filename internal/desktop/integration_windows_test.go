@@ -76,6 +76,14 @@ func TestWindowsFixtureProcess(t *testing.T) {
 	}
 	fixture := windowsFixture{Editor: editor, Canvas: canvas}
 	targets := []w.HWND{canvas, root, editor}
+	var titlelessMenu w.HWND
+	if os.Getenv("COMPUTER_MCP_WINDOWS_TITLELESS_MENU") == "1" {
+		titlelessMenu, code = w.CreateWindowExW(0, w.StrToPwstr("STATIC"), nil, w.WS_POPUP|w.WS_BORDER|w.WINDOW_STYLE(w.SS_NOTIFY), 0, 0, 140, 42, root, 0, 0, nil)
+		if titlelessMenu == 0 {
+			t.Fatal(code)
+		}
+		targets = append(targets, titlelessMenu)
+	}
 	var popupButton w.HWND
 	if os.Getenv("COMPUTER_MCP_WINDOWS_POPUP_TEST") == "1" {
 		popupButton = createWindowsPopupFixture(t, root, &fixture)
@@ -90,16 +98,33 @@ func TestWindowsFixtureProcess(t *testing.T) {
 				return 0
 			}
 			if dialogTest && h == editor && message == w.WM_CONTEXTMENU {
+				x, y := int32(int16(data)), int32(int16(data>>16))
+				if titlelessMenu != 0 {
+					w.SetWindowPos(titlelessMenu, w.HWND_TOP, x, y, 0, 0, w.SWP_NOSIZE|w.SWP_SHOWWINDOW)
+					w.SetForegroundWindow(titlelessMenu)
+					return 0
+				}
 				menu, _ := w.CreatePopupMenu()
 				if menu == 0 {
 					return 0
 				}
 				defer w.DestroyMenu(menu)
 				w.AppendMenuW(menu, w.MF_STRING, 1, w.StrToPwstr(fixtureMenuItem))
-				if selected, _ := w.TrackPopupMenu(menu, w.TPM_RETURNCMD|w.TPM_NONOTIFY, int32(int16(data)), int32(int16(data>>16)), 0, root, nil); selected == 1 {
+				if selected, _ := w.TrackPopupMenu(menu, w.TPM_RETURNCMD|w.TPM_NONOTIFY, x, y, 0, root, nil); selected == 1 {
 					w.SetWindowTextW(editor, w.StrToPwstr("menu clicked"))
 				}
 				return 0
+			}
+			if h == titlelessMenu {
+				switch message {
+				case w.WM_MOUSEACTIVATE:
+					return w.LRESULT(w.MA_NOACTIVATE)
+				case w.WM_LBUTTONUP:
+					w.SetWindowTextW(editor, w.StrToPwstr("menu clicked"))
+					w.ShowWindow(h, w.SW_HIDE)
+					w.SetForegroundWindow(root)
+					return 0
+				}
 			}
 			if popupButton != 0 && h == fixture.Popup && message == w.WM_COMMAND && w.HWND(data) == popupButton && uint32(param)>>16 == w.BN_CLICKED {
 				w.SetWindowTextW(editor, w.StrToPwstr("popup clicked"))
@@ -320,13 +345,18 @@ func TestNativeWindowsActivation(t *testing.T) {
 }
 
 type windowsObservation struct {
-	SnapshotID  string    `json:"snapshot_id"`
-	Window      Window    `json:"window"`
-	Elements    []Element `json:"elements"`
-	Region      Rect      `json:"region"`
-	CaptureMode string    `json:"capture_mode"`
-	ImageWidth  int       `json:"image_width"`
-	ImageHeight int       `json:"image_height"`
+	SnapshotID        string    `json:"snapshot_id"`
+	Window            Window    `json:"window"`
+	Elements          []Element `json:"elements"`
+	Region            Rect      `json:"region"`
+	CaptureMode       string    `json:"capture_mode"`
+	ImageWidth        int       `json:"image_width"`
+	ImageHeight       int       `json:"image_height"`
+	ScreenshotOnly    bool      `json:"screenshot_only"`
+	CreatedAt         time.Time `json:"created_at"`
+	ExpiresAt         time.Time `json:"expires_at"`
+	Truncated         bool      `json:"truncated"`
+	TruncationReasons []string  `json:"truncation_reasons"`
 }
 
 type windowsClickResult struct {
@@ -336,7 +366,7 @@ type windowsClickResult struct {
 	ObservationError json.RawMessage    `json:"observation_error"`
 }
 
-func startWindowsObservationFixture(t *testing.T) (windowsFixture, func(string, map[string]any, any)) {
+func startWindowsObservationFixture(t *testing.T) (windowsFixture, func(string, map[string]any, any) bool) {
 	t.Helper()
 	if os.Getenv("COMPUTER_MCP_NATIVE_TEST") != "1" {
 		t.Skip("set COMPUTER_MCP_NATIVE_TEST=1 in an interactive desktop session")
@@ -359,7 +389,7 @@ func startWindowsObservationFixture(t *testing.T) (windowsFixture, func(string, 
 	}
 	t.Cleanup(func() { _ = session.Close() })
 
-	call := func(name string, args map[string]any, result any) {
+	call := func(name string, args map[string]any, result any) bool {
 		t.Helper()
 		r, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if err != nil {
@@ -372,6 +402,11 @@ func startWindowsObservationFixture(t *testing.T) (windowsFixture, func(string, 
 		if err := json.Unmarshal([]byte(text), result); err != nil {
 			t.Fatal(err)
 		}
+		if len(r.Content) == 2 {
+			image, ok := r.Content[1].(*mcp.ImageContent)
+			return ok && image.MIMEType == "image/jpeg" && len(image.Data) > 0
+		}
+		return false
 	}
 	return fixture, call
 }
@@ -431,10 +466,28 @@ func TestNativeWindowsClickObservation(t *testing.T) {
 }
 
 func TestNativeWindowsMenuObservation(t *testing.T) {
+	testNativeWindowsMenuObservation(t)
+}
+
+func TestNativeWindowsTitlelessMenuObservation(t *testing.T) {
+	t.Setenv("COMPUTER_MCP_WINDOWS_TITLELESS_MENU", "1")
+	testNativeWindowsMenuObservation(t)
+}
+
+func testNativeWindowsMenuObservation(t *testing.T) {
+	t.Helper()
 	fixture, call := startWindowsObservationFixture(t)
 	requireFixtureActive(t, fixture)
+	var limited windowsObservation
+	call("computer_observe", map[string]any{"window_id": fixture.Window.ID, "max_elements": 1}, &limited)
+	if !limited.Truncated || len(limited.Elements) != 1 || len(limited.TruncationReasons) != 1 || limited.TruncationReasons[0] != "element_limit" {
+		t.Fatalf("expected a reported element limit, got %+v", limited)
+	}
 	var image windowsObservation
-	call("computer_observe", map[string]any{"window_id": fixture.Window.ID, "screenshot": true}, &image)
+	if !call("computer_observe", map[string]any{"window_id": fixture.Window.ID, "screenshot_only": true}, &image) ||
+		!image.ScreenshotOnly || len(image.Elements) != 0 || image.ExpiresAt.Sub(image.CreatedAt) != time.Minute {
+		t.Fatalf("expected an actionable window JPEG without UIA elements, got %+v", image)
+	}
 	var editorBounds w.RECT
 	if ok, code := w.GetWindowRect(fixture.Editor, &editorBounds); ok == 0 {
 		t.Fatal(code)
@@ -442,18 +495,22 @@ func TestNativeWindowsMenuObservation(t *testing.T) {
 	center := winRect(editorBounds).Center()
 	point := Point{X: (center.X - image.Region.X) * float64(image.ImageWidth) / image.Region.Width, Y: (center.Y - image.Region.Y) * float64(image.ImageHeight) / image.Region.Height}
 	var opened windowsClickResult
-	call("computer_click", map[string]any{"snapshot_id": image.SnapshotID, "button": "right", "point": point, "report_hit": true, "observe_after": map[string]any{"screenshot": true}}, &opened)
+	hasMenuImage := call("computer_click", map[string]any{"snapshot_id": image.SnapshotID, "button": "right", "point": point, "report_hit": true, "observe_after": map[string]any{"screenshot": true}}, &opened)
 	if opened.Hit == nil || opened.Hit.WindowID != fixture.Window.ID || opened.Hit.Control == nil || opened.Hit.Control.Role == "" || opened.Hit.Control.Bounds != winRect(editorBounds) || !opened.Hit.Control.Bounds.Contains(opened.Hit.DesktopPoint) {
 		t.Fatalf("expected a pre-dispatch hit on the fixture editor: %+v", opened.Hit)
 	}
 	menu := opened.Observation
-	if !opened.InputDelivered || !menu.Window.Menu || menu.Window.PID != fixture.Window.PID || menu.CaptureMode != "screen" || menu.Region != menu.Window.Bounds || menu.ImageWidth == 0 || menu.ImageHeight == 0 {
+	if !opened.InputDelivered || !hasMenuImage || !menu.Window.Menu || menu.Window.PID != fixture.Window.PID || menu.CaptureMode != "screen" || menu.Region != menu.Window.Bounds || menu.ImageWidth == 0 || menu.ImageHeight == 0 {
 		t.Fatalf("expected a scoped menu screenshot, got %+v (%s)", menu, opened.ObservationError)
+	}
+	previousMenu := menu.SnapshotID
+	if !call("computer_observe", map[string]any{"window_id": menu.Window.ID, "screenshot": true}, &menu) || menu.SnapshotID == previousMenu {
+		t.Fatal("could not refresh the menu screenshot")
 	}
 	var closed windowsClickResult
 	call("computer_click", map[string]any{"snapshot_id": menu.SnapshotID, "point": Point{X: float64(menu.ImageWidth) / 2, Y: float64(menu.ImageHeight) / 2}, "observe_after": map[string]any{}}, &closed)
-	if !closed.InputDelivered || closed.Observation.Window.ID != fixture.Window.ID || fixtureText(t, fixture.Editor) != "menu clicked" {
-		t.Fatalf("menu item selection did not return to the fixture: %+v (%s)", closed.Observation, closed.ObservationError)
+	if got := fixtureText(t, fixture.Editor); !closed.InputDelivered || closed.Observation.Window.ID != fixture.Window.ID || got != "menu clicked" {
+		t.Fatalf("menu item selection did not return to the fixture: window=%s editor=%q error=%s", closed.Observation.Window.ID, got, closed.ObservationError)
 	}
 }
 
@@ -558,8 +615,8 @@ func testWindowsText(t *testing.T) {
 				wantValue = strings.ReplaceAll(test.want, "\r\n", "\r") + "\r"
 			}
 			nodes, truncated, err := b.Observe(ctx, fixture.Window, ObserveOptions{Limit: 100, MaxDepth: 64})
-			if err != nil || truncated {
-				t.Fatalf("fixture observation: truncated=%t, %v", truncated, err)
+			if err != nil || truncated != 0 {
+				t.Fatalf("fixture observation: truncated=%v, %v", truncated, err)
 			}
 			found := false
 			for _, node := range nodes {

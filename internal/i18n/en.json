@@ -51,6 +51,7 @@
   "bounds": "Window rectangle in desktop coordinates, including negative display positions.",
   "desktop": "Use screenshot-only desktop mode. Captures the first display unless region is provided; omits semantic elements. Cannot combine with window_id.",
   "screenshot": "Include a JPEG image in window mode; defaults to false. Desktop mode always includes an image.",
+  "screenshot_only": "Window-only JPEG observation with no accessibility traversal. Implies screenshot=true. Supports image regions and coordinate input. Semantic filters and diffs require a tree observation.",
   "max_elements": "Accessibility element budget and OCR region limit, 1..1000; default 200.",
   "max_width": "Maximum screenshot width, 320..2560; default 1440. Requires screenshot=true for window observations; desktop mode always includes an image.",
   "region": "Desktop-coordinate rectangle. In window mode, filters intersecting accessibility elements and crops any screenshot; must lie inside the window. In desktop mode, may span displays.",

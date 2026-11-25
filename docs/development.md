@@ -35,6 +35,8 @@ Window capture and screen capture are explicit choices because an unobscured win
 
 Windows element clicks use UIA bounds in physical desktop pixels. For a hit in another root window, the native backend verifies its same-process owner chain and checks that it contains the observed element's bounds. UIA hit testing matches the requested element in the control view and can follow an icon or text child to its control. The owned-popup fixture exercises a control beyond the main window, an unowned covering window, and a covering control inside the popup.
 
+Windows follow-up checks the foreground GUI thread's menu state for native menus and the owner chain for titleless foreground popups. A screen capture stays within the verified menu bounds. The server checks menu identity and geometry again after observation and before using the menu snapshot for input.
+
 ## Verification
 
 [CI](../.github/workflows/ci.yml) defines the full check sequence and uploads the tarballs after the package smoke checks. Use its macOS deployment environment when running Go tests or vet directly. [`build:native`](../scripts/native.ts) sets the deployment target for native builds.
@@ -59,7 +61,7 @@ Remove-Item Env:COMPUTER_MCP_NATIVE_TEST
 
 Keep the desktop idle so the fixture windows retain focus. Windows fixture setup can click its own verified edit control to acquire foreground access. macOS fixtures report missing Accessibility or Screen Recording permissions as skips. Hosted CI leaves interactive fixtures disabled and does not verify permission attribution or signed upgrades.
 
-On a Windows test machine without the Go toolchain, copy the desktop test executable from `go test -c ./internal/desktop` and a native server built from the same checkout. Set `COMPUTER_MCP_TEST_BINARY` to the server's absolute path before running the fixture executable. The follow-up observation fixtures exercise an owned dialog and a Win32 context menu through the stdio server.
+On a Windows test machine without the Go toolchain, copy the desktop test executable from `go test -c ./internal/desktop` and a native server built from the same checkout. Set `COMPUTER_MCP_TEST_BINARY` to the server's absolute path before running the fixture executable. The follow-up observation fixtures exercise an owned dialog, a Win32 context menu, and a titleless owned popup through the stdio server.
 
 ## Release
 

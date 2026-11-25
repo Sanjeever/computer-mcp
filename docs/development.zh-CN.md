@@ -35,6 +35,8 @@ pnpm pack:check
 
 Windows 元素点击使用 UIA 报告的桌面物理像素坐标。命中其他根窗口时，后端验证它是否通过同进程 owner 链归属目标窗口，并检查该窗口是否包含观察到的元素矩形。UIA 在控件视图内匹配请求的元素，命中图标或文字子节点时可向上找到对应控件。弹层夹具覆盖主窗口之外的控件、无归属的遮挡窗口和弹层内的遮挡控件。
 
+Windows 后续观察通过前台 GUI 线程的菜单状态识别原生菜单，通过 owner 链验证无标题的前台弹层。屏幕截图限制在已验证的菜单边界内。服务在观察后和使用菜单快照输入前，再次验证菜单身份和几何。
+
 ## 验证
 
 [CI](../.github/workflows/ci.yml) 定义完整检查流程，在安装包冒烟检查后上传 tarball。macOS 直接运行 Go 测试或 vet 时，沿用 CI 中的部署环境变量。[`build:native`](../scripts/native.ts) 会为原生构建设置部署目标。
@@ -59,7 +61,7 @@ Remove-Item Env:COMPUTER_MCP_NATIVE_TEST
 
 测试期间保持桌面空闲，让夹具窗口保持焦点。Windows 夹具可在准备阶段点击已确认属于自身的编辑控件以获取前台焦点。macOS 缺少辅助功能或屏幕录制权限时，夹具会报告跳过原因。托管 CI 不启用交互夹具，也不验证权限归属或签名升级。
 
-Windows 测试机没有 Go 工具链时，可复制 `go test -c ./internal/desktop` 生成的桌面测试程序，以及同一份源码构建的原生服务。运行夹具前，将 `COMPUTER_MCP_TEST_BINARY` 设为服务的绝对路径。后续观察夹具通过 stdio 服务验证所属对话框和 Win32 右键菜单。
+Windows 测试机没有 Go 工具链时，可复制 `go test -c ./internal/desktop` 生成的桌面测试程序，以及同一份源码构建的原生服务。运行夹具前，将 `COMPUTER_MCP_TEST_BINARY` 设为服务的绝对路径。后续观察夹具通过 stdio 服务验证所属对话框、Win32 右键菜单和无标题所属弹层。
 
 ## 发布
 

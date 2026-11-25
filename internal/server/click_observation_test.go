@@ -46,7 +46,7 @@ func (b *clickDesktop) Input(ctx context.Context, op string, in desktop.Input) e
 	return err
 }
 
-func (b *clickDesktop) Observe(ctx context.Context, w desktop.Window, o desktop.ObserveOptions) ([]desktop.Element, bool, error) {
+func (b *clickDesktop) Observe(ctx context.Context, w desktop.Window, o desktop.ObserveOptions) ([]desktop.Element, desktop.Truncation, error) {
 	if b.duringObserve != nil {
 		b.duringObserve()
 	}

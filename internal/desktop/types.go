@@ -40,6 +40,36 @@ type ObserveOptions struct {
 	MaxDepth int    `json:"max_depth"`
 }
 
+type Truncation uint8
+
+const (
+	TruncatedElementLimit Truncation = 1 << iota
+	TruncatedNodeLimit
+	TruncatedTimeLimit
+	TruncatedDepthLimit
+	TruncatedProviderError
+	TruncatedUnspecified
+)
+
+func (t Truncation) Reasons() []string {
+	var reasons []string
+	for _, reason := range []struct {
+		flag Truncation
+		name string
+	}{
+		{TruncatedElementLimit, "element_limit"},
+		{TruncatedNodeLimit, "node_limit"},
+		{TruncatedTimeLimit, "time_limit"},
+		{TruncatedDepthLimit, "depth_limit"},
+		{TruncatedProviderError, "provider_error"},
+	} {
+		if t&reason.flag != 0 {
+			reasons = append(reasons, reason.name)
+		}
+	}
+	return reasons
+}
+
 func (o ObserveOptions) Includes(e Element) bool {
 	if o.Region != nil && !o.Region.Intersects(e.Bounds) {
 		return false
@@ -120,7 +150,7 @@ type Input struct {
 type Backend interface {
 	Status() (Status, error)
 	Windows() ([]Window, error)
-	Observe(context.Context, Window, ObserveOptions) ([]Element, bool, error)
+	Observe(context.Context, Window, ObserveOptions) ([]Element, Truncation, error)
 	Resolve(string) (Element, error)
 	Focus(Window) (Element, error)
 	Window(Window, string, Rect) error
