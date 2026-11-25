@@ -14,8 +14,13 @@ const (
 )
 
 type BatchArgs struct {
-	SnapshotID string          `json:"snapshot_id"`
-	Steps      []batchStepArgs `json:"steps"`
+	SnapshotID   string            `json:"snapshot_id"`
+	Steps        []batchStepArgs   `json:"steps"`
+	ObserveAfter *batchObservation `json:"observe_after,omitempty"`
+}
+
+type batchObservation struct {
+	Screenshot bool `json:"screenshot"`
 }
 
 type batchStepArgs struct {
@@ -30,9 +35,13 @@ type batchStepResult struct {
 }
 
 type batchResult struct {
-	Steps     []batchStepResult `json:"steps"`
-	StoppedAt *int              `json:"stopped_at,omitempty"`
-	Failure   *toolFailure      `json:"error,omitempty"`
+	Steps            []batchStepResult `json:"steps"`
+	StoppedAt        *int              `json:"stopped_at,omitempty"`
+	Failure          *toolFailure      `json:"error,omitempty"`
+	Observation      *Snapshot         `json:"observation,omitempty"`
+	ObservationError *toolFailure      `json:"observation_error,omitempty"`
+	observationErr   error
+	suggestedRegion  *desktop.Rect
 }
 
 func batchResults(total, completed int) batchResult {
@@ -57,6 +66,9 @@ func batch(ctx context.Context, s *state, a BatchArgs) response {
 	if len(a.Steps) == 0 || len(a.Steps) > maxBatchSteps {
 		return invalid(fmt.Sprintf("steps: 1..%d", maxBatchSteps))
 	}
+	if a.ObserveAfter != nil && !a.ObserveAfter.Screenshot {
+		return invalid("computer_batch observe_after requires screenshot=true")
+	}
 	snap, err := s.latestSnapshot(a.SnapshotID)
 	if err != nil {
 		return response{err: err}
@@ -78,7 +90,23 @@ func batch(ctx context.Context, s *state, a BatchArgs) response {
 			return batchStopped(len(inputs), i, "unknown", err)
 		}
 	}
-	return response{value: batchResults(len(inputs), len(inputs))}
+	result := batchResults(len(inputs), len(inputs))
+	if a.ObserveAfter == nil {
+		return response{value: result}
+	}
+	followUp, image := captureAfterMouseInput(ctx, s, snap, MouseObservation{Screenshot: true}, batchObservationWindow)
+	result.Observation = followUp.Observation
+	result.observationErr = followUp.err
+	result.suggestedRegion = followUp.suggestedRegion
+	return response{value: result, image: image}
+}
+
+func batchObservationWindow(b desktop.Backend, source desktop.Window) (desktop.Window, *desktop.Rect, error) {
+	w, region, err := mouseObservationWindow(b, source)
+	if err == nil && w.ID != source.ID {
+		return desktop.Window{}, nil, desktop.Fail("stale_snapshot", "follow-up target changed; current_window_id="+w.ID)
+	}
+	return w, region, err
 }
 
 func checkBatchStroke(ctx context.Context, s *state, snap *Snapshot, path []desktop.Point) error {

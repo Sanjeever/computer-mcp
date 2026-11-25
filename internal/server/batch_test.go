@@ -13,14 +13,18 @@ import (
 
 type batchTestDesktop struct {
 	*fakeDesktop
-	paths [][]desktop.Point
+	paths      [][]desktop.Point
+	afterInput func(context.Context, int) error
 }
 
 func (b *batchTestDesktop) Input(ctx context.Context, op string, in desktop.Input) error {
 	if op == "drag" {
 		b.paths = append(b.paths, in.Path)
 	}
-	return b.fakeDesktop.Input(ctx, op, in)
+	if err := b.fakeDesktop.Input(ctx, op, in); err != nil || b.afterInput == nil {
+		return err
+	}
+	return b.afterInput(ctx, b.inputs)
 }
 
 func connectBatchTest(t *testing.T, b desktop.Backend) (*mcp.ClientSession, context.CancelFunc) {
@@ -78,9 +82,11 @@ type batchTestStep struct {
 }
 
 type batchTestResult struct {
-	Steps     []batchTestStep `json:"steps"`
-	StoppedAt *int            `json:"stopped_at"`
-	Failure   *toolFailure    `json:"error"`
+	Steps            []batchTestStep `json:"steps"`
+	StoppedAt        *int            `json:"stopped_at"`
+	Failure          *toolFailure    `json:"error"`
+	Observation      *Snapshot       `json:"observation"`
+	ObservationError *toolFailure    `json:"observation_error"`
 }
 
 func batchTestStroke(x float64) map[string]any {
@@ -177,5 +183,72 @@ func TestBatchBoundsTotalWork(t *testing.T) {
 				t.Fatalf("batch limit: result=%+v inputs=%d", got, fake.inputs)
 			}
 		})
+	}
+}
+
+func TestBatchReturnsOneFreshObservation(t *testing.T) {
+	_, fake := setup()
+	cs, _ := connectBatchTest(t, fake)
+	snap := batchTestObserve(t, cs)
+	args := map[string]any{
+		"snapshot_id":   snap.ID,
+		"steps":         []map[string]any{batchTestStroke(10), batchTestStroke(100)},
+		"observe_after": map[string]any{"screenshot": true},
+	}
+	var got batchTestResult
+	r := batchTestCall(t, cs, "computer_batch", args, &got)
+	next := got.Observation
+	if r.IsError || next == nil || next.Window == nil || next.ID == snap.ID || next.Window.ID != snap.Window.ID ||
+		next.Region != snap.Region || next.CaptureMode != snap.CaptureMode || !next.ScreenshotOnly ||
+		len(r.Content) != 2 {
+		t.Fatalf("follow-up: %+v content=%+v", got, r.Content)
+	}
+	if image, ok := r.Content[1].(*mcp.ImageContent); !ok || image.MIMEType != "image/jpeg" || len(image.Data) == 0 {
+		t.Fatalf("expected a JPEG, got %+v", r.Content[1])
+	}
+	args["snapshot_id"] = next.ID
+	delete(args, "observe_after")
+	if r := batchTestCall(t, cs, "computer_batch", args, &got); r.IsError || fake.inputs != 4 {
+		t.Fatalf("next snapshot should be usable: %+v", r)
+	}
+}
+
+func TestBatchCaptureErrorPreservesDeliveredStrokes(t *testing.T) {
+	_, b := setupClickDesktop()
+	cs, _ := connectBatchTest(t, b)
+	snap := batchTestObserve(t, cs)
+	b.captureErr = context.DeadlineExceeded
+	var got batchTestResult
+	r := batchTestCall(t, cs, "computer_batch", map[string]any{
+		"snapshot_id":   snap.ID,
+		"steps":         []map[string]any{batchTestStroke(10), batchTestStroke(100)},
+		"observe_after": map[string]any{"screenshot": true},
+	}, &got)
+	want := []batchTestStep{{"completed", "sent"}, {"completed", "sent"}}
+	if r.IsError || got.Observation != nil || len(r.Content) != 1 || !reflect.DeepEqual(got.Steps, want) ||
+		got.ObservationError == nil || got.ObservationError.Code != "timeout" ||
+		got.ObservationError.Timing == nil || got.ObservationError.Timing.Stage != "capture" {
+		t.Fatalf("capture failure: result=%+v, content=%+v", got, r.Content)
+	}
+}
+
+func TestBatchFollowUpDoesNotSwitchToOwnedWindow(t *testing.T) {
+	_, fake := setup()
+	b := &batchTestDesktop{fakeDesktop: fake, afterInput: func(context.Context, int) error {
+		fake.windows[0].Active = false
+		fake.windows = append(fake.windows, desktop.Window{ID: "dialog", OwnerID: "w1", PID: 10, Active: true})
+		return nil
+	}}
+	cs, _ := connectBatchTest(t, b)
+	snap := batchTestObserve(t, cs)
+	var got batchTestResult
+	r := batchTestCall(t, cs, "computer_batch", map[string]any{
+		"snapshot_id":   snap.ID,
+		"steps":         []map[string]any{batchTestStroke(10)},
+		"observe_after": map[string]any{"screenshot": true},
+	}, &got)
+	if r.IsError || got.Observation != nil || len(r.Content) != 1 || got.ObservationError == nil ||
+		got.ObservationError.Code != "stale_snapshot" || !reflect.DeepEqual(got.Steps, []batchTestStep{{"completed", "sent"}}) {
+		t.Fatalf("owned window follow-up: result=%+v, content=%+v", got, r.Content)
 	}
 }

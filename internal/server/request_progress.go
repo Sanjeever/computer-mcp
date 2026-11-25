@@ -61,6 +61,9 @@ func (j *job) withTiming(r response) response {
 	if result, ok := r.value.(mouseObservationResult); ok {
 		err = result.err
 	}
+	if result, ok := r.value.(batchResult); ok && err == nil {
+		err = result.observationErr
+	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		timing := j.progress.timing()
 		r.timing = &timing

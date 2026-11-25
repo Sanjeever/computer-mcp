@@ -47,6 +47,7 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 	}
 	mcp.AddTool(s, &mcp.Tool{Name: name, Description: c.Text(name), InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly}}, func(ctx context.Context, _ *mcp.CallToolRequest, a A) (*mcp.CallToolResult, any, error) {
 		r := e.call(ctx, name, func(ctx context.Context, s *state) response { return f(ctx, s, a) })
+		batch, isBatch := r.value.(batchResult)
 		if r.err != nil {
 			code, detail := errorCode(r.err)
 			message := c.Text(code)
@@ -57,34 +58,40 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 				message = c.Text("target_obscured_windows")
 			}
 			v := toolFailure{Code: code, Message: message, Detail: detail, Timing: r.timing}
-			if batch, ok := r.value.(batchResult); ok {
-				batch.Failure = &v
-				data, err := json.Marshal(batch)
-				if err != nil {
-					return nil, nil, err
-				}
-				return &mcp.CallToolResult{
-					IsError:           true,
-					Content:           []mcp.Content{&mcp.TextContent{Text: string(data)}},
-					StructuredContent: batch,
-				}, nil, nil
+			if !isBatch {
+				data, _ := json.Marshal(v)
+				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
 			}
-			data, _ := json.Marshal(v)
-			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
+			batch.Failure = &v
 		}
 		if v, ok := r.value.(mouseObservationResult); ok && v.err != nil {
-			code, detail := errorCode(v.err)
-			v.ObservationError = &toolFailure{Code: code, Message: c.Text("input_observation_failed"), Detail: detail, Timing: r.timing, SuggestedRegion: v.suggestedRegion}
+			v.ObservationError = observationFailure(c, v.err, r.timing, v.suggestedRegion)
 			r.value = v
+		}
+		if isBatch {
+			if batch.observationErr != nil {
+				batch.ObservationError = observationFailure(c, batch.observationErr, r.timing, batch.suggestedRegion)
+			}
+			r.value = batch
 		}
 		data, err := json.Marshal(r.value)
 		if err != nil {
 			return nil, nil, err
 		}
 		result := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}
+		if r.err != nil {
+			result.IsError = true
+			result.StructuredContent = r.value
+			return result, nil, nil
+		}
 		if len(r.image) > 0 {
 			result.Content = append(result.Content, &mcp.ImageContent{Data: r.image, MIMEType: "image/jpeg"})
 		}
 		return result, r.value, nil
 	})
+}
+
+func observationFailure(c i18n.Catalog, err error, timing *stageTiming, region *desktop.Rect) *toolFailure {
+	code, detail := errorCode(err)
+	return &toolFailure{Code: code, Message: c.Text("input_observation_failed"), Detail: detail, Timing: timing, SuggestedRegion: region}
 }

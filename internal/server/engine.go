@@ -193,7 +193,7 @@ func (j *job) interrupted(err error) response {
 	// A blocked native observation still holds the worker. The caller can
 	// learn that the input was delivered without waiting for the provider.
 	if delivered := j.mouseDelivery.Load(); delivered != nil {
-		return delivered.failed(err, nil)
+		return response{value: delivered.failed(err, nil)}
 	}
 	return response{err: err}
 }
