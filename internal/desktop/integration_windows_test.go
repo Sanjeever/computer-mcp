@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -586,6 +587,72 @@ func TestNativeWindowsMouse(t *testing.T) {
 		if w.GetAsyncKeyState(int32(key)) < 0 {
 			t.Fatalf("key %d held after cancellation", key)
 		}
+	}
+}
+
+func TestNativeWindowsDrawingBatch(t *testing.T) {
+	fixture, call := startWindowsObservationFixture(t)
+	requireFixtureActive(t, fixture)
+	var rect w.RECT
+	if ok, code := w.GetWindowRect(fixture.Canvas, &rect); ok == 0 {
+		t.Fatal(code)
+	}
+	center := winRect(rect).Center()
+	region := Rect{X: center.X - 80, Y: center.Y - 25, Width: 160, Height: 50}
+	var source windowsObservation
+	if !call("computer_observe", map[string]any{"window_id": fixture.Window.ID, "screenshot_only": true, "region": region}, &source) ||
+		source.SnapshotID == "" || source.Region != region || source.ImageWidth == 0 || source.ImageHeight == 0 {
+		t.Fatalf("drawing observation: %+v", source)
+	}
+	left, right := float64(source.ImageWidth)/4, 3*float64(source.ImageWidth)/4
+	top, bottom := float64(source.ImageHeight)/4, 3*float64(source.ImageHeight)/4
+	steps := []map[string]any{
+		{"op": "drag", "path": []Point{{X: left, Y: top}, {X: right, Y: top}}, "duration_ms": 200},
+		{"op": "drag", "path": []Point{{X: right, Y: bottom}, {X: left, Y: bottom}}, "duration_ms": 200},
+	}
+	fixtureMessage(t, fixture.Canvas, w.WM_APP, 0, 0)
+	var result struct {
+		Steps []struct {
+			Status        string `json:"status"`
+			InputDelivery string `json:"input_delivery"`
+		} `json:"steps"`
+		Observation      windowsObservation `json:"observation"`
+		ObservationError json.RawMessage    `json:"observation_error"`
+	}
+	if !call("computer_batch", map[string]any{
+		"snapshot_id": source.SnapshotID, "steps": steps, "observe_after": map[string]any{"screenshot": true},
+	}, &result) || len(result.Steps) != len(steps) || result.Observation.SnapshotID == "" || result.Observation.SnapshotID == source.SnapshotID ||
+		result.Observation.Window.ID != fixture.Window.ID || result.Observation.Region != region || !result.Observation.ScreenshotOnly {
+		t.Fatalf("drawing batch result: %+v", result)
+	}
+	for i, step := range result.Steps {
+		if step.Status != "completed" || step.InputDelivery != "sent" {
+			t.Fatalf("stroke %d: %+v", i, step)
+		}
+	}
+	var events string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		events = fixtureText(t, fixture.Canvas)
+		if strings.Count(events, "up:") >= len(steps) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	var transitions []string
+	for event := range strings.SplitSeq(events, "|") {
+		kind, _, _ := strings.Cut(event, ":")
+		if kind == "down" || kind == "up" {
+			transitions = append(transitions, kind)
+		} else if event == "move:1:false" && len(transitions) > 0 && transitions[len(transitions)-1] == "down" {
+			transitions = append(transitions, "drag")
+		}
+	}
+	if want := []string{"down", "drag", "up", "down", "drag", "up"}; !slices.Equal(transitions, want) {
+		t.Fatalf("fixture event sequence: got %v, want %v; raw events %q", transitions, want, events)
+	}
+	if w.GetAsyncKeyState(int32(w.VK_LBUTTON)) < 0 {
+		t.Fatal("left mouse button still held after the batch")
 	}
 }
 

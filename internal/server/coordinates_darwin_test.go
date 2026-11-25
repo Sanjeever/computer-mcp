@@ -69,6 +69,10 @@ func TestNativeImageCoordinates(t *testing.T) {
 	if target.ID == "" {
 		t.Fatal("dedicated fixture did not become active")
 	}
+	t.Run("stdio drawing batch", func(t *testing.T) { testNativeDrawingBatch(t, ctx, target) })
+	if t.Failed() {
+		return
+	}
 	s := &state{backend: b}
 	for _, mode := range []string{"original", "scaled", "cropped", "moved"} {
 		t.Run(mode, func(t *testing.T) {

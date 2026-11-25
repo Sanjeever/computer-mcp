@@ -45,7 +45,7 @@ On Windows, run in the target user's interactive session. `computer_status` repo
 | `computer_key`     | Send one keyboard chord                                   |
 | `computer_scroll`  | Scroll at a snapshot image point                          |
 | `computer_drag`    | Straight or continuous path drag in snapshot image points |
-| `computer_batch`   | Draw consecutive strokes from one window screenshot        |
+| `computer_batch`   | Draw consecutive strokes from one window screenshot       |
 | `computer_wait`    | Wait for a window or matching accessibility text          |
 
 Start with `computer_window({"action":"list"})`, activate an exact `window_id`, then observe it. Screenshot coordinates use the returned image, with `(0, 0)` at its top left. `region` and window bounds use desktop coordinates: logical points on macOS, DPI-aware pixels on Windows. The server converts between these spaces.

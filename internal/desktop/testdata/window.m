@@ -30,6 +30,9 @@
 @property(assign) NSTextField *field;
 @property NSUInteger corners;
 @property BOOL dragging;
+@property BOOL strokeStartsOnLeft;
+@property NSUInteger strokeCount;
+@property(copy) NSString *recentStrokeStarts;
 @end
 @implementation FixtureClickTarget
 - (BOOL)isAccessibilityElement { return YES; }
@@ -42,6 +45,8 @@
 - (void)mouseDown:(NSEvent *)event {
     self.corners = 0;
     self.dragging = NO;
+    NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+    self.strokeStartsOnLeft = p.x < NSMidX(self.bounds);
     self.field.stringValue = (event.modifierFlags & NSEventModifierFlagShift) ? @"shift clicked" : @"image clicked";
 }
 - (void)mouseDragged:(NSEvent *)event {
@@ -51,8 +56,15 @@
     if (p.x > 20 && p.y > 20) self.corners |= 2;
 }
 - (void)mouseUp:(NSEvent *)event {
-    if (self.dragging)
-        self.field.stringValue = self.corners == 3 ? @"path complete" : @"path released";
+    if (self.dragging) {
+        self.strokeCount++;
+        NSString *starts = [(self.recentStrokeStarts ?: @"") stringByAppendingString:self.strokeStartsOnLeft ? @"L" : @"R"];
+        self.recentStrokeStarts = starts.length > 8 ? [starts substringFromIndex:starts.length - 8] : starts;
+        NSString *status = self.corners == 3 ? @"path complete" : @"path released";
+        self.field.stringValue = [NSString stringWithFormat:@"%@; strokes=%lu recent=%@", status,
+            (unsigned long)self.strokeCount, self.recentStrokeStarts];
+    }
+    self.dragging = NO;
 }
 @end
 

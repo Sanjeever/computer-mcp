@@ -160,6 +160,27 @@ func TestBatchStopsAfterObscuredStroke(t *testing.T) {
 	}
 }
 
+func TestBatchStopsWhenWindowMovesBetweenStrokes(t *testing.T) {
+	_, fake := setup()
+	b := &batchTestDesktop{fakeDesktop: fake, afterInput: func(context.Context, int) error {
+		fake.windows[0].Bounds.X += 20
+		return nil
+	}}
+	cs, _ := connectBatchTest(t, b)
+	snap := batchTestObserve(t, cs)
+	var got batchTestResult
+	r := batchTestCall(t, cs, "computer_batch", map[string]any{
+		"snapshot_id":   snap.ID,
+		"steps":         []map[string]any{batchTestStroke(10), batchTestStroke(100)},
+		"observe_after": map[string]any{"screenshot": true},
+	}, &got)
+	want := []batchTestStep{{"completed", "sent"}, {"failed", "not_sent"}}
+	if !r.IsError || got.Failure == nil || got.Failure.Code != "stale_snapshot" || !reflect.DeepEqual(got.Steps, want) ||
+		got.Observation != nil || len(r.Content) != 1 || fake.inputs != 1 {
+		t.Fatalf("moved window: result=%+v inputs=%d", got, fake.inputs)
+	}
+}
+
 func TestBatchBoundsTotalWork(t *testing.T) {
 	_, fake := setup()
 	cs, _ := connectBatchTest(t, fake)
