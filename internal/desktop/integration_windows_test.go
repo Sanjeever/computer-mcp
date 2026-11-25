@@ -502,6 +502,10 @@ func testNativeWindowsMenuObservation(t *testing.T) {
 		len(focused.Observation.Elements) != 0 || focus == nil || focus.Role == "" || focus.Bounds != winRect(editorBounds) {
 		t.Fatalf("expected the focused editor with a screenshot: %+v (%s)", focused.Observation, focused.ObservationError)
 	}
+	if focused.Hit == nil || focused.Hit.WindowID != fixture.Window.ID || !winRect(editorBounds).Contains(focused.Hit.DesktopPoint) ||
+		focused.Hit.Control != nil || focused.Hit.ControlError != "" {
+		t.Fatalf("expected basic hit on the fixture editor: %+v", focused.Hit)
+	}
 	image = focused.Observation
 	var opened windowsClickResult
 	hasMenuImage := call("computer_click", map[string]any{"snapshot_id": image.SnapshotID, "button": "right", "point": point, "report_hit": true, "observe_after": map[string]any{"screenshot": true}}, &opened)
@@ -517,8 +521,8 @@ func testNativeWindowsMenuObservation(t *testing.T) {
 		t.Fatal("could not refresh the menu screenshot")
 	}
 	var closed windowsClickResult
-	call("computer_click", map[string]any{"snapshot_id": menu.SnapshotID, "point": Point{X: float64(menu.ImageWidth) / 2, Y: float64(menu.ImageHeight) / 2}, "observe_after": map[string]any{}}, &closed)
-	if got := fixtureText(t, fixture.Editor); !closed.InputDelivered || closed.Observation.Window.ID != fixture.Window.ID || got != "menu clicked" {
+	call("computer_click", map[string]any{"snapshot_id": menu.SnapshotID, "point": Point{X: float64(menu.ImageWidth) / 2, Y: float64(menu.ImageHeight) / 2}, "report_hit": false, "observe_after": map[string]any{}}, &closed)
+	if got := fixtureText(t, fixture.Editor); !closed.InputDelivered || closed.Hit != nil || closed.Observation.Window.ID != fixture.Window.ID || got != "menu clicked" {
 		t.Fatalf("menu item selection did not return to the fixture: window=%s editor=%q error=%s", closed.Observation.Window.ID, got, closed.ObservationError)
 	}
 }

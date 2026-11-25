@@ -297,7 +297,7 @@ type ClickArgs struct {
 	SnapshotID   string            `json:"snapshot_id"`
 	ElementID    string            `json:"element_id,omitempty"`
 	Point        *desktop.Point    `json:"point,omitempty"`
-	ReportHit    bool              `json:"report_hit,omitempty"`
+	ReportHit    *bool             `json:"report_hit,omitempty"`
 	Button       string            `json:"button,omitempty"`
 	Count        int               `json:"count,omitempty"`
 	HoldKeys     []string          `json:"hold_keys,omitempty"`
@@ -708,12 +708,11 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	if err := a.ObserveAfter.validate(snap); err != nil {
 		return response{err: err}
 	}
-	p, err := clickPoint(ctx, s.backend, snap, a)
+	p, hit, err := clickPoint(ctx, s.backend, snap, a, a.ReportHit == nil)
 	if err != nil {
 		return response{err: err}
 	}
-	var hit *desktop.ClickHit
-	if a.ReportHit {
+	if a.ReportHit != nil && *a.ReportHit {
 		observer, ok := s.backend.(desktop.ClickHitObserver)
 		if !ok {
 			return response{err: desktop.Fail("unsupported_operation", "report_hit is available on Windows")}
@@ -727,7 +726,7 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 		if _, err := s.mouseSnapshot(a.SnapshotID, a.HoldKeys); err != nil {
 			return response{err: err}
 		}
-		if _, err := clickPoint(ctx, s.backend, snap, a); err != nil {
+		if _, _, err := clickPoint(ctx, s.backend, snap, a, false); err != nil {
 			return response{err: err}
 		}
 		if value.Control != nil {
@@ -749,12 +748,19 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter, result)
 }
 
-func clickPoint(ctx context.Context, backend desktop.Backend, snap *Snapshot, a ClickArgs) (desktop.Point, error) {
+func clickPoint(ctx context.Context, backend desktop.Backend, snap *Snapshot, a ClickArgs, reportWindow bool) (desktop.Point, *desktop.ClickHit, error) {
 	var p desktop.Point
 	var err error
 	if a.Point != nil {
 		p, err = imagePoint(snap, *a.Point)
-		if err == nil && snap.Window != nil {
+		if err != nil {
+			return p, nil, err
+		}
+		if observer, ok := backend.(desktop.ClickHitObserver); ok && reportWindow {
+			hit, err := observer.ClickWindowHit(snap.Window, p)
+			return p, &hit, err
+		}
+		if snap.Window != nil {
 			err = backend.CheckPoint(*snap.Window, p, snap.CaptureMode == "screen")
 		}
 	} else {
@@ -766,7 +772,7 @@ func clickPoint(ctx context.Context, backend desktop.Backend, snap *Snapshot, a 
 			}
 		}
 		if old == nil {
-			return p, desktop.Fail("stale_snapshot", a.ElementID)
+			return p, nil, desktop.Fail("stale_snapshot", a.ElementID)
 		}
 		var now desktop.Element
 		now, err = backend.Resolve(a.ElementID)
@@ -777,7 +783,7 @@ func clickPoint(ctx context.Context, backend desktop.Backend, snap *Snapshot, a 
 			p, err = backend.ElementClickPoint(ctx, *snap.Window, now)
 		}
 	}
-	return p, err
+	return p, nil, err
 }
 func (s *state) mouseSnapshot(id string, keys []string) (*Snapshot, error) {
 	seen := map[string]bool{}

@@ -23,7 +23,18 @@ type clickDesktop struct {
 
 type hitDesktop struct {
 	*clickDesktop
-	duringHit func()
+	windowHits int
+	duringHit  func()
+}
+
+func (b *hitDesktop) ClickWindowHit(w *desktop.Window, p desktop.Point) (desktop.ClickHit, error) {
+	b.windowHits++
+	if w != nil {
+		if err := b.CheckPoint(*w, p, false); err != nil {
+			return desktop.ClickHit{}, err
+		}
+	}
+	return desktop.ClickHit{DesktopPoint: p, WindowID: "w1"}, nil
 }
 
 func (b *hitDesktop) ClickHit(_ context.Context, p desktop.Point) desktop.ClickHit {
@@ -218,7 +229,8 @@ func TestClickReportsHitAndRechecksWindowBeforeInput(t *testing.T) {
 	if r := observe(ctx, s, ObserveArgs{Screenshot: true}); r.err != nil {
 		t.Fatal(r.err)
 	}
-	args := ClickArgs{SnapshotID: s.snapshot.ID, Point: &desktop.Point{X: 125, Y: 50}, ReportHit: true}
+	reportHit := true
+	args := ClickArgs{SnapshotID: s.snapshot.ID, Point: &desktop.Point{X: 125, Y: 50}, ReportHit: &reportHit}
 	requireCode(t, click(ctx, s, args), "unsupported_operation")
 	probe := &hitDesktop{clickDesktop: b, duringHit: func() { b.windows[0].Bounds.X++ }}
 	s.backend = probe
@@ -232,6 +244,34 @@ func TestClickReportsHitAndRechecksWindowBeforeInput(t *testing.T) {
 	result, ok := r.value.(mouseObservationResult)
 	if r.err != nil || !ok || !result.InputDelivered || result.Hit == nil || result.Hit.Control == nil || result.Hit.Control.Name != "Ribbon" || result.Hit.DesktopPoint != (desktop.Point{X: 150, Y: 200}) || b.inputs != 1 {
 		t.Fatalf("click with hit: %+v, %v", r.value, r.err)
+	}
+}
+
+func TestCoordinateClickReturnsWindowHitByDefault(t *testing.T) {
+	s, b := setupClickDesktop()
+	probe := &hitDesktop{clickDesktop: b, duringHit: func() { t.Fatal("queried UIA for a default hit") }}
+	s.backend = probe
+	ctx := context.Background()
+	point := desktop.Point{X: 125, Y: 50}
+	if r := observe(ctx, s, ObserveArgs{Screenshot: true}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, Point: &point})
+	result, ok := r.value.(mouseObservationResult)
+	if r.err != nil || !ok || !result.InputDelivered || result.Hit == nil || result.Hit.Control != nil ||
+		result.Hit.WindowID != "w1" || result.Hit.DesktopPoint != (desktop.Point{X: 150, Y: 200}) || probe.windowHits != 1 {
+		t.Fatalf("default coordinate click: %+v, %v", r.value, r.err)
+	}
+	if r := observe(ctx, s, ObserveArgs{Screenshot: true}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	reportHit := false
+	r = click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, Point: &point, ReportHit: &reportHit})
+	if r.err != nil || probe.windowHits != 1 || b.inputs != 2 {
+		t.Fatalf("opted-out coordinate click: %+v, %v", r.value, r.err)
+	}
+	if value, ok := r.value.(map[string]any); !ok || value["input_delivered"] != true {
+		t.Fatalf("expected delivery acknowledgement only: %+v", r.value)
 	}
 }
 
@@ -329,7 +369,8 @@ func TestClickObservationCancellationWhileProviderIsBlocked(t *testing.T) {
 	done := make(chan response, 1)
 	go func() {
 		done <- e.call(callCtx, "computer_click", func(ctx context.Context, s *state) response {
-			return click(ctx, s, ClickArgs{SnapshotID: snapshot.ID, ElementID: "0", ReportHit: true, ObserveAfter: &MouseObservation{}})
+			reportHit := true
+			return click(ctx, s, ClickArgs{SnapshotID: snapshot.ID, ElementID: "0", ReportHit: &reportHit, ObserveAfter: &MouseObservation{}})
 		})
 	}()
 	select {

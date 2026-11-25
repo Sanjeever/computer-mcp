@@ -183,6 +183,7 @@ type ControlSummary struct {
 }
 
 type ClickHitObserver interface {
+	ClickWindowHit(window *Window, point Point) (ClickHit, error)
 	ClickHit(context.Context, Point) ClickHit
 }
 

@@ -462,17 +462,40 @@ func encodeCapture(source image.Image, width int) (Capture, error) {
 	return Capture{output.Bytes(), ow, oh}, nil
 }
 func (b *winBackend) CheckPoint(target Window, p Point, _ bool) error {
-	h, err := hwnd(target.ID)
-	if err != nil {
-		return err
+	_, err := checkWindowsPoint(&target, w.POINT{X: int32(p.X), Y: int32(p.Y)})
+	return err
+}
+
+func checkWindowsPoint(target *Window, point w.POINT) (w.HWND, error) {
+	var h w.HWND
+	if target != nil {
+		var err error
+		h, err = hwnd(target.ID)
+		if err != nil {
+			return 0, err
+		}
 	}
-	point := w.POINT{X: int32(p.X), Y: int32(p.Y)}
 	hit := w.WindowFromPoint(point)
 	root := w.GetAncestor(hit, w.GA_ROOT)
-	if root == h {
-		return nil
+	if target == nil || root == h {
+		return root, nil
 	}
-	return windowsPointFailure(target, point, hit, root, "other_window_at_point", nil)
+	return 0, windowsPointFailure(*target, point, hit, root, "other_window_at_point", nil)
+}
+
+func (b *winBackend) ClickWindowHit(target *Window, p Point) (ClickHit, error) {
+	point := w.POINT{X: int32(p.X), Y: int32(p.Y)}
+	root, err := checkWindowsPoint(target, point)
+	if err != nil {
+		return ClickHit{}, err
+	}
+	result := ClickHit{DesktopPoint: Point{X: float64(point.X), Y: float64(point.Y)}}
+	if target != nil {
+		result.WindowID = target.ID
+	} else if root != 0 {
+		result.WindowID = windowID(root)
+	}
+	return result, nil
 }
 
 func (b *winBackend) ClickHit(ctx context.Context, p Point) ClickHit {
