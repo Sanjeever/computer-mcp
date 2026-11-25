@@ -6,6 +6,26 @@ This guide covers client configuration, desktop permissions, and the tool contra
 
 ## Connect
 
+### Codex
+
+Add this block to `~/.codex/config.toml`. Set `COMPUTER_MCP_LANG` under `[mcp_servers.computer.env]` if you want to use Simplified Chinese. [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+
+```toml
+[mcp_servers.computer]
+command = "npx"
+args = ["-y", "@sanjeever/computer-mcp"]
+```
+
+If Codex on Windows cannot launch `npx`, use this block instead.
+
+```toml
+[mcp_servers.computer]
+command = "cmd.exe"
+args = ["/d", "/s", "/c", "npx", "-y", "@sanjeever/computer-mcp"]
+```
+
+### Other MCP clients
+
 To use the published npm package, configure a client that accepts `mcpServers`.
 
 ```json
@@ -20,9 +40,13 @@ To use the published npm package, configure a client that accepts `mcpServers`.
 }
 ```
 
+On Windows, clients that cannot launch `npx.cmd` directly can use `"command": "cmd"` and prefix the `args` above with `"/d", "/s", "/c", "npx"`.
+
+### Language and launch options
+
 English is the default. Set `COMPUTER_MCP_LANG` to `zh-CN` for Simplified Chinese tool descriptions and application errors. The command-line option `--lang zh-CN` overrides the environment setting. Tool names, fields, and error codes stay unchanged. Desktop text, native diagnostics, and SDK validation errors retain their original language.
 
-On Windows, clients that cannot launch `npx.cmd` directly can use `"command": "cmd"` and prefix the `args` above with `"/d", "/s", "/c", "npx"`. Append `@<version>` to the package name to pin a release. For local development, [build from source](development.md) and set `command` to the absolute path to the native executable. Remove the `npx` arguments for that configuration.
+Append `@<version>` to the package name to pin a release. To run a source build, set `command` to the absolute path to the native executable and remove the `npx` arguments. [Build from source](development.md)
 
 ## Permissions
 

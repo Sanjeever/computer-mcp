@@ -6,6 +6,32 @@
 
 ## 接入
 
+### Codex
+
+在 `~/.codex/config.toml` 中添加以下配置。`[mcp_servers.computer.env]` 中的语言设置用于启用简体中文。[Codex MCP 配置文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+
+```toml
+[mcp_servers.computer]
+command = "npx"
+args = ["-y", "@sanjeever/computer-mcp"]
+
+[mcp_servers.computer.env]
+COMPUTER_MCP_LANG = "zh-CN"
+```
+
+如果 Windows 上的 Codex 无法启动 `npx`，可改用以下配置。
+
+```toml
+[mcp_servers.computer]
+command = "cmd.exe"
+args = ["/d", "/s", "/c", "npx", "-y", "@sanjeever/computer-mcp"]
+
+[mcp_servers.computer.env]
+COMPUTER_MCP_LANG = "zh-CN"
+```
+
+### 其他 MCP 客户端
+
 使用已发布的 npm 包时，在支持 `mcpServers` 的客户端中添加以下配置。
 
 ```json
@@ -20,9 +46,13 @@
 }
 ```
 
+Windows 客户端若无法直接启动 `npx.cmd`，可设置 `"command": "cmd"`，并在上述 `args` 开头依次加上 `"/d"`、`"/s"`、`"/c"`、`"npx"`。
+
+### 语言和启动选项
+
 语言默认使用英文。设置 `COMPUTER_MCP_LANG=zh-CN` 可将工具描述和应用错误切换为简体中文，命令行参数 `--lang zh-CN` 优先于环境变量。工具名、字段和错误码保持不变。桌面文字、原生诊断和 SDK 参数校验信息保留原语言。
 
-Windows 客户端若无法直接启动 `npx.cmd`，可设置 `"command": "cmd"`，并在上述 `args` 开头依次加上 `"/d"`、`"/s"`、`"/c"`、`"npx"`。在包名后加 `@<版本号>` 可固定版本。本地开发先从源码构建，再将 `command` 设为原生可执行文件的绝对路径，并移除 `npx` 参数。[源码构建](development.zh-CN.md)
+在包名后加 `@<版本号>` 可固定版本。使用源码构建产物时，将 `command` 设为原生可执行文件的绝对路径，并移除 `npx` 参数。[源码构建](development.zh-CN.md)
 
 ## 权限
 
