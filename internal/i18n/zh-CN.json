@@ -46,7 +46,7 @@
   "canceled": "请求已取消，输入可能已发送。",
   "canceled_read_only": "只读请求已取消，本次未发送输入。仍在执行的原生操作会占用桌面工作线程，直到调用返回。",
   "window_id": "computer_window 返回的精确窗口 ID。仅在明确支持省略时，使用当前激活窗口。",
-  "snapshot_id": "所有窗口和桌面共享的最新可用快照 ID，来自 computer_observe 或 computer_click、computer_drag 的后续观察。新观察会替换它；输入、wait 和窗口变更使其失效。",
+  "snapshot_id": "所有窗口和桌面共享的最新可用快照 ID，来自 computer_observe 或 computer_click、computer_drag 的后续观察。到期时间见 expires_at。新观察会替换它，输入、wait 和窗口变更使其失效。",
   "action": "窗口操作：list、activate 或 move。",
   "bounds": "桌面坐标中的窗口矩形，支持负数显示器位置。",
   "desktop": "纯截图桌面模式。默认首个显示器，可通过 region 指定范围，不包含语义元素。不能与 window_id 同用。",

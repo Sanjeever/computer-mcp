@@ -46,7 +46,7 @@
   "canceled": "The request was canceled. Input may already have been delivered.",
   "canceled_read_only": "The read-only request was canceled. No input was sent. An ongoing native operation occupies the desktop worker until it returns.",
   "window_id": "Exact window_id from computer_window; omission selects the active window only where explicitly supported.",
-  "snapshot_id": "Latest usable snapshot ID from computer_observe or the follow-up observation from computer_click or computer_drag, across all windows and the desktop. A new observation replaces it; input, wait and window changes invalidate it.",
+  "snapshot_id": "Latest usable snapshot ID from computer_observe or the follow-up observation from computer_click or computer_drag, across all windows and the desktop. See expires_at for its expiry. A new observation replaces it; input, wait and window changes invalidate it.",
   "action": "Window operation: list, activate, or move.",
   "bounds": "Window rectangle in desktop coordinates, including negative display positions.",
   "desktop": "Use screenshot-only desktop mode. Captures the first display unless region is provided; omits semantic elements. Cannot combine with window_id.",

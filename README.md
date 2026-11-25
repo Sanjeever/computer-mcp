@@ -61,7 +61,9 @@ Pass that response's `snapshot_id` and an `element_id` to `computer_click`, or u
 
 On Windows, `computer_type` sends each LF, CRLF, or standalone CR as one Enter keystroke. Multiline editors normally insert a line break; other controls may submit a form or perform their usual Enter action.
 
-All windows and the desktop share one actionable snapshot. It expires after 60 seconds. A new observation replaces it, and a wait or window mutation invalidates it. An input attempt consumes it once it reaches native dispatch, including an uncertain native failure. A request rejected during argument or input-precondition validation can leave it usable. After `stale_snapshot`, observe the intended target again and use the new references and image coordinates.
+All windows and the desktop share one actionable snapshot. It expires 60 seconds after `created_at`, at the returned `expires_at` time. A new observation replaces it, and a wait or window mutation invalidates it. An input attempt consumes it once it reaches native dispatch, including an uncertain native failure. A request rejected during argument or input-precondition validation can leave it usable. After `stale_snapshot`, observe the intended target again and use the new references and image coordinates.
+
+Point input requires the current snapshot's image. Its origin is the top-left corner of the returned image, including after cropping and resizing. Invalid point errors distinguish a missing screenshot from a point outside `image_width` and `image_height`. For a window crop outside the target, the error gives the window's bounds in desktop coordinates.
 
 Pass `observe_after` as an empty object on `computer_click` or `computer_drag` to return the next window observation under `observation`. Add `"screenshot":true` inside `observe_after` for JPEG content and use the returned `observation.snapshot_id` and image for the next action. A new screenshot of the same window reuses the capture mode and width limit. It reuses the previous crop relative to the window when it still fits. Desktop follow-up requires `"screenshot":true` and reuses the desktop region and width limit.
 

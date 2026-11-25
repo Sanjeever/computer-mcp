@@ -155,7 +155,7 @@ func TestStaleSnapshotExplainsRecovery(t *testing.T) {
 				}
 				want = "no current snapshot"
 			case "expired":
-				s.snapshot.Created = time.Now().Add(-61 * time.Second)
+				s.snapshot.ExpiresAt = time.Now().Add(-time.Second)
 				want = "60-second lifetime"
 			}
 			r := click(ctx, s, ClickArgs{SnapshotID: id, Point: &desktop.Point{X: 10, Y: 10}})
@@ -184,7 +184,7 @@ func TestStaleElementDoesNotClick(t *testing.T) {
 			case "disabled":
 				b.nodes[0].Enabled = false
 			case "expired":
-				s.snapshot.Created = time.Now().Add(-time.Minute * 2)
+				s.snapshot.ExpiresAt = time.Now().Add(-time.Second)
 			case "window":
 				b.windows[0].Bounds.X++
 			case "focus":
@@ -300,9 +300,34 @@ func TestPasswordRedactionAndWait(t *testing.T) {
 func TestImageBounds(t *testing.T) {
 	snap := &Snapshot{Region: desktop.Rect{Width: 100, Height: 50}, ImageWidth: 100, ImageHeight: 50}
 	for _, p := range []desktop.Point{{X: -1}, {X: 100}, {Y: 50}} {
-		if _, err := imagePoint(snap, p); err == nil {
-			t.Fatal("out of bounds accepted")
+		_, err := imagePoint(snap, p)
+		if _, detail := errorCode(err); err == nil || !strings.Contains(detail, "100x50 snapshot image") {
+			t.Fatalf("out of bounds: %v", err)
 		}
+	}
+	_, err := imagePoint(&Snapshot{}, desktop.Point{})
+	if _, detail := errorCode(err); err == nil || !strings.Contains(detail, "screenshot=true") {
+		t.Fatalf("missing screenshot: %v", err)
+	}
+}
+
+func TestObservationExpiryAndCropDetail(t *testing.T) {
+	s, b := setup()
+	b.displays = []desktop.Display{{ID: "main", Bounds: b.windows[0].Bounds}}
+	ctx := context.Background()
+	for _, desktopMode := range []bool{false, true} {
+		r := observe(ctx, s, ObserveArgs{Desktop: desktopMode})
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		if snap := s.snapshot; snap.ExpiresAt.Sub(snap.Created) != 60*time.Second || snap.expired() {
+			t.Fatalf("snapshot expiry: %+v", snap)
+		}
+	}
+	r := observe(ctx, s, ObserveArgs{Screenshot: true, Region: &desktop.Rect{Width: 2000, Height: 150}})
+	requireCode(t, r, "invalid_argument")
+	if _, detail := errorCode(r.err); !strings.Contains(detail, "window bounds {X:-100 Y:100 Width:1000 Height:500}") {
+		t.Fatalf("crop detail: %s", detail)
 	}
 }
 

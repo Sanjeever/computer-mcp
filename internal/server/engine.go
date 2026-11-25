@@ -19,6 +19,8 @@ import (
 	"github.com/gofrs/flock"
 )
 
+const snapshotLifetime = 60 * time.Second
+
 type Snapshot struct {
 	ID           string                   `json:"snapshot_id"`
 	Window       *desktop.Window          `json:"window,omitempty"`
@@ -29,6 +31,7 @@ type Snapshot struct {
 	ImageWidth   int                      `json:"image_width,omitempty"`
 	ImageHeight  int                      `json:"image_height,omitempty"`
 	Created      time.Time                `json:"created_at"`
+	ExpiresAt    time.Time                `json:"expires_at"`
 	Scope        desktop.ObserveOptions   `json:"-"`
 	CaptureMode  string                   `json:"capture_mode,omitempty"`
 	OCR          []desktop.RecognizedText `json:"ocr,omitempty"`
@@ -36,6 +39,14 @@ type Snapshot struct {
 	OCRRequested bool                     `json:"-"`
 	maxWidth     int
 }
+
+func (s *Snapshot) stamp() {
+	s.Created = time.Now().UTC()
+	s.ExpiresAt = s.Created.Add(snapshotLifetime)
+}
+
+func (s *Snapshot) expired() bool { return !time.Now().Before(s.ExpiresAt) }
+
 type response struct {
 	value  any
 	image  []byte
@@ -212,8 +223,8 @@ func (s *state) current(id string) (*Snapshot, error) {
 		}
 		return nil, desktop.Fail("stale_snapshot", "latest observation is "+target+"; earlier snapshots are invalid")
 	}
-	if time.Since(snap.Created) > 60*time.Second {
-		return nil, desktop.Fail("stale_snapshot", "snapshot exceeded its 60-second lifetime")
+	if snap.expired() {
+		return nil, desktop.Fail("stale_snapshot", "snapshot exceeded its 60-second lifetime at "+snap.ExpiresAt.Format(time.RFC3339Nano))
 	}
 	if snap.Window == nil {
 		if err := checkDisplayLayout(s.backend, snap.Displays); err != nil {
@@ -242,8 +253,11 @@ func (s *state) current(id string) (*Snapshot, error) {
 	return snap, nil
 }
 func imagePoint(s *Snapshot, p desktop.Point) (desktop.Point, error) {
-	if s.ImageWidth == 0 || s.ImageHeight == 0 || math.IsNaN(p.X) || math.IsNaN(p.Y) || p.X < 0 || p.Y < 0 || p.X >= float64(s.ImageWidth) || p.Y >= float64(s.ImageHeight) {
-		return desktop.Point{}, desktop.Fail("invalid_argument", "point must lie inside the snapshot image")
+	if s.ImageWidth == 0 || s.ImageHeight == 0 {
+		return desktop.Point{}, desktop.Fail("invalid_argument", "snapshot has no image; observe the target with screenshot=true and use the new image and snapshot_id")
+	}
+	if math.IsNaN(p.X) || math.IsNaN(p.Y) || p.X < 0 || p.Y < 0 || p.X >= float64(s.ImageWidth) || p.Y >= float64(s.ImageHeight) {
+		return desktop.Point{}, desktop.Fail("invalid_argument", fmt.Sprintf("point (%g,%g) is outside the %dx%d snapshot image; use coordinates from its top-left corner", p.X, p.Y, s.ImageWidth, s.ImageHeight))
 	}
 	return desktop.Point{X: s.Region.X + p.X*s.Region.Width/float64(s.ImageWidth), Y: s.Region.Y + p.Y*s.Region.Height/float64(s.ImageHeight)}, nil
 }
@@ -443,7 +457,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 		return invalid("root_id requires snapshot_id and vice versa")
 	}
 	if a.RootID != "" {
-		if s.snapshot == nil || s.snapshot.ID != a.SnapshotID || time.Since(s.snapshot.Created) > time.Minute || s.snapshot.Window == nil {
+		if s.snapshot == nil || s.snapshot.ID != a.SnapshotID || s.snapshot.expired() || s.snapshot.Window == nil {
 			return response{err: desktop.Fail("stale_snapshot", "subtree root")}
 		}
 		if a.WindowID != "" && a.WindowID != s.snapshot.Window.ID {
@@ -519,12 +533,13 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 		if _, err = rand.Read(token); err != nil {
 			return response{err: err}
 		}
-		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, Created: time.Now().UTC(), CaptureMode: "screen", maxWidth: a.MaxWidth}
+		snap := &Snapshot{ID: hex.EncodeToString(token), Displays: slices.Clone(status.Displays), Elements: []desktop.Element{}, Region: region, ImageWidth: capture.Width, ImageHeight: capture.Height, CaptureMode: "screen", maxWidth: a.MaxWidth}
 		if a.OCR {
 			if err := recognize(ctx, s.backend, snap, capture, a.MaxElements); err != nil {
 				return response{err: err}
 			}
 		}
+		snap.stamp()
 		s.snapshot = snap
 		s.previous = snap
 		return response{value: snap, image: capture.Data}
@@ -562,7 +577,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	if a.Region != nil {
 		region = *a.Region
 		if !rectWithin(region, w.Bounds) {
-			return invalid("region must be inside window bounds")
+			return invalid(fmt.Sprintf("region %+v is outside window bounds %+v; use desktop coordinates", region, w.Bounds))
 		}
 	}
 	options := desktop.ObserveOptions{Limit: a.MaxElements, RootID: a.RootID, Region: a.Region, Text: a.Text, Role: a.Role, Compact: a.Compact, MaxDepth: a.MaxDepth}
@@ -594,7 +609,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 	if _, err = rand.Read(token); err != nil {
 		return response{err: err}
 	}
-	snap := &Snapshot{ID: hex.EncodeToString(token), Window: &w, Elements: elements, Truncated: truncated, Region: region, Created: time.Now().UTC(), Scope: options}
+	snap := &Snapshot{ID: hex.EncodeToString(token), Window: &w, Elements: elements, Truncated: truncated, Region: region, Scope: options}
 	var data []byte
 	if a.Screenshot {
 		var capture desktop.Capture
@@ -630,6 +645,7 @@ func observeTarget(ctx context.Context, s *state, a ObserveArgs, target *desktop
 			return response{err: desktop.Fail("stale_snapshot", "menu changed during observation")}
 		}
 	}
+	snap.stamp()
 	s.snapshot = snap
 	var value any = snap
 	if a.SinceSnapshotID != "" {
