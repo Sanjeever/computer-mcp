@@ -170,13 +170,13 @@ type MenuObserver interface {
 }
 
 type ClickHit struct {
-	DesktopPoint Point       `json:"desktop_point"`
-	WindowID     string      `json:"window_id,omitempty"`
-	Control      *HitControl `json:"control,omitempty"`
-	ControlError string      `json:"control_error,omitempty"`
+	DesktopPoint Point           `json:"desktop_point"`
+	WindowID     string          `json:"window_id,omitempty"`
+	Control      *ControlSummary `json:"control,omitempty"`
+	ControlError string          `json:"control_error,omitempty"`
 }
 
-type HitControl struct {
+type ControlSummary struct {
 	Role   string `json:"role"`
 	Name   string `json:"name,omitempty"`
 	Bounds Rect   `json:"bounds"`

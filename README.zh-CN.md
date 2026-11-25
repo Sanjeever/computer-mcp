@@ -67,6 +67,8 @@ Windows 上，`computer_type` 将每个 LF、CRLF 或单独 CR 作为一次 Ente
 
 调用 `computer_click` 或 `computer_drag` 时将 `observe_after` 设为空对象，即可从 `observation` 取得输入后的窗口观察。在 `observe_after` 中加入 `"screenshot":true` 可附带 JPEG，下一步使用返回的 `observation.snapshot_id` 和本次图像。同一窗口的新截图沿用捕获模式和宽度上限。原裁剪区域相对窗口仍有效时，也会继续沿用。桌面后续观察要求 `"screenshot":true`，沿用桌面区域和宽度上限。
 
+在窗口 `observe_after` 中加入 `focused:true`，可在 `observation.focused` 中获取活动窗口焦点控件的角色、可取得的名称和桌面边界。纯截图观察可以直接附带摘要，无须遍历无障碍树。没有可取得的焦点控件时省略该字段。查询失败时可随观察返回 `observation.focus_error`。
+
 在 Windows 上，后续观察可以跟随输入目标直属的前台窗口，也可以在对话框关闭后返回所属窗口。服务会短暂等待应用处理输入。界面切换较慢时，使用 `computer_wait` 或重新观察。若同时返回 `input_delivered:true` 和 `observation_error`，输入已发送。请先取得新观察，再决定是否重复输入。
 
 Windows 能确认可见菜单归属时，后续观察以 `window.menu:true` 和 `mouse_active:true` 标识菜单。使用 `observe_after:{"screenshot":true}` 会返回菜单矩形范围内的屏幕截图，并标明 `capture_mode:"screen"`。用这张图和快照点击菜单。使用 `observe_after:{}` 会读取菜单的无障碍元素。菜单仍打开时，可将最近一次菜单观察的 `window_id` 传给 `computer_observe` 刷新。菜单归属无法验证但能取得边界时，`observation_error.suggested_region` 提供桌面裁剪范围。可将它作为 `region` 与 `desktop:true` 一起传入，单独观察该区域。

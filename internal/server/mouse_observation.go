@@ -10,6 +10,20 @@ import (
 
 type MouseObservation struct {
 	Screenshot bool `json:"screenshot,omitempty"`
+	Focused    bool `json:"focused,omitempty"`
+}
+
+func (o *MouseObservation) validate(source *Snapshot) error {
+	if o == nil || source.Window != nil {
+		return nil
+	}
+	if !o.Screenshot {
+		return desktop.Fail("invalid_argument", "desktop observe_after requires screenshot=true")
+	}
+	if o.Focused {
+		return desktop.Fail("invalid_argument", "observe_after.focused requires a window snapshot")
+	}
+	return nil
 }
 
 type mouseObservationResult struct {
@@ -81,6 +95,19 @@ func observeAfterMouseInput(ctx context.Context, s *state, source *Snapshot, opt
 			return result.failed(r.err, &target.Bounds)
 		}
 		return result.failed(r.err, nil)
+	}
+	if options.Focused && target != nil && target.Active && ctx.Err() == nil {
+		desktop.ReportStage(ctx, "focus")
+		focused, err := s.backend.Focus(*target)
+		if err != nil {
+			s.snapshot.FocusError = clip(err.Error(), 512)
+		} else if focused.Focused {
+			summary := &desktop.ControlSummary{Role: clip(focused.Role, 128), Bounds: focused.Bounds}
+			if !focused.Password {
+				summary.Name = clip(focused.Name, 512)
+			}
+			s.snapshot.Focused = summary
+		}
 	}
 	var err error
 	if target == nil {

@@ -417,6 +417,9 @@ func (b *winBackend) Focus(target Window) (Element, error) {
 	if err := hr(b.automation.GetFocusedElementBuildCache(b.cache, &e)); err != nil {
 		return Element{}, err
 	}
+	if e == nil {
+		return Element{}, nil
+	}
 	defer e.Release()
 	var pid int32
 	if err := hr(e.Get_CurrentProcessId(&pid)); err != nil {
@@ -505,7 +508,7 @@ func (b *winBackend) ClickHit(ctx context.Context, p Point) ClickHit {
 		result.ControlError = "UIA element bounds or window hit could not be verified"
 		return result
 	}
-	result.Control = &HitControl{Role: node.Role, Bounds: node.Bounds}
+	result.Control = &ControlSummary{Role: node.Role, Bounds: node.Bounds}
 	if !node.Password {
 		result.Control.Name = node.Name
 	}

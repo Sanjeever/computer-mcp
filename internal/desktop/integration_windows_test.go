@@ -345,18 +345,19 @@ func TestNativeWindowsActivation(t *testing.T) {
 }
 
 type windowsObservation struct {
-	SnapshotID        string    `json:"snapshot_id"`
-	Window            Window    `json:"window"`
-	Elements          []Element `json:"elements"`
-	Region            Rect      `json:"region"`
-	CaptureMode       string    `json:"capture_mode"`
-	ImageWidth        int       `json:"image_width"`
-	ImageHeight       int       `json:"image_height"`
-	ScreenshotOnly    bool      `json:"screenshot_only"`
-	CreatedAt         time.Time `json:"created_at"`
-	ExpiresAt         time.Time `json:"expires_at"`
-	Truncated         bool      `json:"truncated"`
-	TruncationReasons []string  `json:"truncation_reasons"`
+	SnapshotID        string          `json:"snapshot_id"`
+	Window            Window          `json:"window"`
+	Elements          []Element       `json:"elements"`
+	Focused           *ControlSummary `json:"focused"`
+	Region            Rect            `json:"region"`
+	CaptureMode       string          `json:"capture_mode"`
+	ImageWidth        int             `json:"image_width"`
+	ImageHeight       int             `json:"image_height"`
+	ScreenshotOnly    bool            `json:"screenshot_only"`
+	CreatedAt         time.Time       `json:"created_at"`
+	ExpiresAt         time.Time       `json:"expires_at"`
+	Truncated         bool            `json:"truncated"`
+	TruncationReasons []string        `json:"truncation_reasons"`
 }
 
 type windowsClickResult struct {
@@ -494,6 +495,14 @@ func testNativeWindowsMenuObservation(t *testing.T) {
 	}
 	center := winRect(editorBounds).Center()
 	point := Point{X: (center.X - image.Region.X) * float64(image.ImageWidth) / image.Region.Width, Y: (center.Y - image.Region.Y) * float64(image.ImageHeight) / image.Region.Height}
+	var focused windowsClickResult
+	hasFocusImage := call("computer_click", map[string]any{"snapshot_id": image.SnapshotID, "point": point, "observe_after": map[string]any{"screenshot": true, "focused": true}}, &focused)
+	focus := focused.Observation.Focused
+	if !focused.InputDelivered || !hasFocusImage || !focused.Observation.ScreenshotOnly ||
+		len(focused.Observation.Elements) != 0 || focus == nil || focus.Role == "" || focus.Bounds != winRect(editorBounds) {
+		t.Fatalf("expected the focused editor with a screenshot: %+v (%s)", focused.Observation, focused.ObservationError)
+	}
+	image = focused.Observation
 	var opened windowsClickResult
 	hasMenuImage := call("computer_click", map[string]any{"snapshot_id": image.SnapshotID, "button": "right", "point": point, "report_hit": true, "observe_after": map[string]any{"screenshot": true}}, &opened)
 	if opened.Hit == nil || opened.Hit.WindowID != fixture.Window.ID || opened.Hit.Control == nil || opened.Hit.Control.Role == "" || opened.Hit.Control.Bounds != winRect(editorBounds) || !opened.Hit.Control.Bounds.Contains(opened.Hit.DesktopPoint) {

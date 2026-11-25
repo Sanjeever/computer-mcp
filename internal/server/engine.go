@@ -26,6 +26,8 @@ type Snapshot struct {
 	Window            *desktop.Window          `json:"window,omitempty"`
 	Displays          []desktop.Display        `json:"displays,omitempty"`
 	Elements          []desktop.Element        `json:"elements"`
+	Focused           *desktop.ControlSummary  `json:"focused,omitempty"`
+	FocusError        string                   `json:"focus_error,omitempty"`
 	Truncated         bool                     `json:"truncated"`
 	TruncationReasons []string                 `json:"truncation_reasons,omitempty"`
 	Region            desktop.Rect             `json:"region"`
@@ -703,8 +705,8 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	if err != nil {
 		return response{err: err}
 	}
-	if a.ObserveAfter != nil && snap.Window == nil && !a.ObserveAfter.Screenshot {
-		return invalid("desktop observe_after requires screenshot=true")
+	if err := a.ObserveAfter.validate(snap); err != nil {
+		return response{err: err}
 	}
 	p, err := clickPoint(ctx, s.backend, snap, a)
 	if err != nil {
@@ -908,8 +910,8 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 	if err != nil {
 		return response{err: err}
 	}
-	if a.ObserveAfter != nil && snap.Window == nil && !a.ObserveAfter.Screenshot {
-		return invalid("desktop observe_after requires screenshot=true")
+	if err := a.ObserveAfter.validate(snap); err != nil {
+		return response{err: err}
 	}
 	points := make([]desktop.Point, len(path))
 	for i, point := range path {

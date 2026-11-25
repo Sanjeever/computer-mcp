@@ -15,6 +15,8 @@ type clickDesktop struct {
 	afterInput    func()
 	duringObserve func()
 	captureErr    error
+	focusErr      error
+	focusCalls    int
 	menu          desktop.Window
 	menuRegion    *desktop.Rect
 }
@@ -28,7 +30,15 @@ func (b *hitDesktop) ClickHit(_ context.Context, p desktop.Point) desktop.ClickH
 	if b.duringHit != nil {
 		b.duringHit()
 	}
-	return desktop.ClickHit{DesktopPoint: p, WindowID: "w1", Control: &desktop.HitControl{Role: "pane", Name: "Ribbon"}}
+	return desktop.ClickHit{DesktopPoint: p, WindowID: "w1", Control: &desktop.ControlSummary{Role: "pane", Name: "Ribbon"}}
+}
+
+func (b *clickDesktop) Focus(w desktop.Window) (desktop.Element, error) {
+	b.focusCalls++
+	if b.focusErr != nil {
+		return desktop.Element{}, b.focusErr
+	}
+	return b.fakeDesktop.Focus(w)
 }
 
 func (b *clickDesktop) ActiveMenu(owner desktop.Window) (desktop.Window, *desktop.Rect) {
@@ -135,6 +145,31 @@ func TestClickObservationReusesImageCoordinates(t *testing.T) {
 	}
 }
 
+func TestMouseObservationAddsFocusToScreenshotOnly(t *testing.T) {
+	s, b := setupClickDesktop()
+	ctx := context.Background()
+	if r := observe(ctx, s, ObserveArgs{ScreenshotOnly: true}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	point := desktop.Point{X: 100, Y: 50}
+	b.afterInput = func() {
+		b.focus = desktop.Element{Role: "pane", Name: "Use rectangle on canvas", Bounds: b.windows[0].Bounds, Focused: true}
+	}
+	options := &MouseObservation{Screenshot: true, Focused: true}
+	r := click(ctx, s, ClickArgs{SnapshotID: s.snapshot.ID, Point: &point, ObserveAfter: options})
+	next := requireClickObservation(t, r)
+	if b.focusCalls != 1 || b.calls != 0 || len(r.image) == 0 || !next.ScreenshotOnly ||
+		next.Focused == nil || next.Focused.Name != b.focus.Name || next.Focused.Bounds != b.focus.Bounds {
+		t.Fatalf("screenshot with focus: %+v, focus calls=%d, tree calls=%d", next, b.focusCalls, b.calls)
+	}
+	b.focusErr = desktop.Fail("native_error", "HRESULT 0x80004005")
+	r = drag(ctx, s, DragArgs{SnapshotID: next.ID, From: &point, To: &desktop.Point{X: 120, Y: 60}, ObserveAfter: options})
+	next = requireClickObservation(t, r)
+	if b.focusCalls != 2 || b.calls != 0 || len(r.image) == 0 || next.Focused != nil || !strings.Contains(next.FocusError, "HRESULT 0x80004005") {
+		t.Fatalf("screenshot with focus lookup error: %+v", next)
+	}
+}
+
 func TestClickObservationFollowsOwnedMenu(t *testing.T) {
 	for _, screenshot := range []bool{false, true} {
 		s, b := setupClickDesktop()
@@ -214,6 +249,12 @@ func TestDesktopClickObservationRequiresImage(t *testing.T) {
 		t.Fatal("invalid options consumed the desktop snapshot")
 	}
 	args.ObserveAfter.Screenshot = true
+	args.ObserveAfter.Focused = true
+	requireCode(t, click(ctx, s, args), "invalid_argument")
+	if b.inputs != 0 || s.snapshot != old {
+		t.Fatal("invalid focus option consumed the desktop snapshot")
+	}
+	args.ObserveAfter.Focused = false
 	r := click(ctx, s, args)
 	next := requireClickObservation(t, r)
 	if next.Window != nil || next.ID == old.ID || next.Region != old.Region || next.maxWidth != old.maxWidth || len(r.image) == 0 {
