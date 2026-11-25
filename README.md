@@ -67,6 +67,8 @@ Pass `observe_after` as an empty object on `computer_click` or `computer_drag` t
 
 On Windows, the follow-up can observe a foreground window directly owned by the input target, or return to the target's owner after its dialog closes. The server briefly waits for the application to process the input. For slower transitions, use `computer_wait` or observe again. If `input_delivered:true` is paired with `observation_error`, the input was sent. Obtain a fresh observation before deciding whether to repeat it.
 
+On Windows, use `element_id` for an observed popup control, including one outside the main window. The server verifies the popup's ownership and that the hit matches the requested control before sending a mouse click. After `stale_snapshot` during a popup transition, observe the window again and use the new references. For a visible popup without a verified element, observe a small desktop region around it and use that image's coordinates.
+
 On macOS, observe an open menu with a window screenshot using `capture_mode:"screen"`. Coordinate clicks and mouse moves can target a menu inside the image when accessibility confirms it belongs to that window. If the menu extends outside the window or its owner cannot be verified, observe a small desktop region around the visible menu.
 
 For the Dock, taskbar, menus outside a verified window, or an empty desktop, use `computer_observe({"desktop":true})`. This returns a screenshot of the first display without a window or semantic elements. Set `region` to a desktop rectangle from `computer_status` to select another display or capture across displays. Desktop coordinate input checks the display layout and can operate without a focused window.

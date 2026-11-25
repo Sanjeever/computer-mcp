@@ -80,6 +80,13 @@ func (b *fakeDesktop) CheckPoint(_ desktop.Window, p desktop.Point, _ bool) erro
 	}
 	return b.pointErr
 }
+func (b *fakeDesktop) ElementClickPoint(_ context.Context, w desktop.Window, e desktop.Element) (desktop.Point, error) {
+	p := e.Bounds.Center()
+	if !w.Bounds.Contains(p) {
+		return desktop.Point{}, desktop.Fail("stale_snapshot", "element is outside window")
+	}
+	return p, b.CheckPoint(w, p, false)
+}
 func (b *fakeDesktop) Recognize(context.Context, desktop.Capture, int) ([]desktop.RecognizedText, bool, error) {
 	return b.ocr, false, b.err
 }

@@ -23,7 +23,7 @@
   "ocr": "按需使用 macOS 本地 Vision 识别返回截图。窗口模式要求 screenshot=true。返回图片坐标中的文本区域和置信度。capture_mode=window 时可为无名称且无值的控件补充 ocr_text。Windows 返回 unsupported_operation。",
   "unsupported_operation": "当前平台或分发方式不支持此操作。",
   "computer_observe": "观察当前或指定窗口，返回有数量上限的无障碍元素和新 snapshot_id。screenshot=true 附带 JPEG 截图，region 须位于窗口内。desktop=true 改为纯截图桌面快照，默认捕获首个显示器，也可指定桌面 region，不传 window_id；适合菜单、Dock、任务栏或无窗口桌面。图片坐标从零开始。新观察使旧引用失效。语义树与截图依次采集，不保证原子一致。",
-  "computer_click": "点击最新快照中的 element_id 或图片坐标 point，二者必须且只能提供一个。窗口快照要求 active=true 或 mouse_active=true，且位置尺寸未变；桌面快照检查显示器布局，支持系统 UI 目标。浮动面板按自身 window_id 观察。可选 hold_keys 要求激活的窗口快照，结束后释放。传入 observe_after 可在点击送达后取得新观察，包括切到前台的 Windows 所属对话框。若同时返回 input_delivered=true 和 observation_error，请重新观察再决定是否重复输入。",
+  "computer_click": "点击最新快照中的 element_id 或图片坐标 point，二者必须且只能提供一个。窗口快照要求 active=true 或 mouse_active=true，且位置尺寸未变；桌面快照检查显示器布局，支持系统 UI 目标。在 Windows 上，使用 element_id 点击已观察到且归属和命中均可验证的弹层控件。独立浮动面板按自身 window_id 观察。可选 hold_keys 要求激活的窗口快照，结束后释放。传入 observe_after 可在点击送达后取得新观察，包括切到前台的 Windows 所属对话框。若同时返回 input_delivered=true 和 observation_error，请重新观察再决定是否重复输入。",
   "observe_after": "点击或拖拽送达后取得新观察。用 {} 读取窗口控件，或用 {\"screenshot\":true} 附带 JPEG。桌面快照要求 screenshot=true。下一步操作使用返回的 observation 中的 snapshot_id。",
   "input_observation_failed": "输入已发送，后续观察失败。请先重新观察目标，再决定是否重复输入。",
   "computer_move": "将鼠标移动到最新快照中的图片坐标，不点击。可选 hover_ms 在该点等待后返回，用于悬停菜单或提示；再次观察以检查结果。窗口快照要求 active=true 或 mouse_active=true，且目标点未被遮挡；桌面快照检查显示器布局。原生失败或取消导致投递结果不确定时，快照仍被消耗。",

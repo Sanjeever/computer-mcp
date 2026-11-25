@@ -81,3 +81,25 @@ func TestCaptureModesAndOcclusionGuard(t *testing.T) {
 	requireCode(t, observe(ctx, s, ObserveArgs{CaptureMode: "window"}), "invalid_argument")
 	requireCode(t, observe(ctx, s, ObserveArgs{Desktop: true, CaptureMode: "window"}), "invalid_argument")
 }
+
+type popupDesktop struct{ *fakeDesktop }
+
+func (b popupDesktop) ElementClickPoint(_ context.Context, w desktop.Window, e desktop.Element) (desktop.Point, error) {
+	p := e.Bounds.Center()
+	return p, b.CheckPoint(w, p, false)
+}
+
+func TestClickAcceptsBackendValidatedElementOutsideWindow(t *testing.T) {
+	s, b := setup()
+	s.backend = popupDesktop{b}
+	ctx := context.Background()
+	b.nodes[0].Bounds.X = b.windows[0].Bounds.X - b.nodes[0].Bounds.Width
+	if r := observe(ctx, s, ObserveArgs{}); r.err != nil {
+		t.Fatal(r.err)
+	}
+	args := ClickArgs{SnapshotID: s.snapshot.ID, ElementID: b.nodes[0].ID}
+	if r := click(ctx, s, args); r.err != nil || b.inputs != 1 || b.input.Point != b.nodes[0].Bounds.Center() {
+		t.Fatalf("expected one click at the validated popup point, got %d at %+v, err=%v", b.inputs, b.input.Point, r.err)
+	}
+	requireCode(t, click(ctx, s, args), "stale_snapshot")
+}

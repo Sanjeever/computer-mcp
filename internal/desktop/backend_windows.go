@@ -451,12 +451,125 @@ func (b *winBackend) CheckPoint(target Window, p Point, _ bool) error {
 	if root == h {
 		return nil
 	}
+	return windowsPointFailure(target, point, hit, root, "other_window_at_point", nil)
+}
+
+func windowsPointFailure(target Window, point w.POINT, hit, root w.HWND, reason string, cause error) error {
 	detail := fmt.Sprintf("target_window_id=%s; desktop_point=(%d,%d)", target.ID, point.X, point.Y)
 	if hit == 0 || root == 0 {
 		return Fail("target_obscured", "reason=no_window_at_point; "+detail)
 	}
 	owner, _ := w.GetWindow(root, w.GW_OWNER)
-	return Fail("target_obscured", fmt.Sprintf("reason=other_window_at_point; %s; hit_window_id=%s; hit_root_window_id=%s; hit_owner_window_id=%s", detail, windowID(hit), windowID(root), windowID(owner)))
+	detail = fmt.Sprintf("reason=%s; %s; hit_window_id=%s; hit_root_window_id=%s; hit_owner_window_id=%s", reason, detail, windowID(hit), windowID(root), windowID(owner))
+	if cause != nil {
+		detail += "; " + cause.Error()
+	}
+	return Fail("target_obscured", detail)
+}
+
+func ownedByWindow(popup, target w.HWND, targetPID uint32) bool {
+	for h, depth := popup, 0; h != 0 && depth < 64; depth++ {
+		var pid uint32
+		if w.GetWindowThreadProcessId(h, &pid) == 0 || pid != targetPID {
+			return false
+		}
+		if h == target {
+			return true
+		}
+		h, _ = w.GetWindow(h, w.GW_OWNER)
+	}
+	return false
+}
+
+func (b *winBackend) ElementClickPoint(ctx context.Context, target Window, e Element) (Point, error) {
+	p := e.Bounds.Center()
+	h, err := hwnd(target.ID)
+	if err != nil {
+		return Point{}, err
+	}
+	point := w.POINT{X: int32(p.X), Y: int32(p.Y)}
+	hit := w.WindowFromPoint(point)
+	root := w.GetAncestor(hit, w.GA_ROOT)
+	if root == h {
+		if !target.Bounds.Contains(p) {
+			return Point{}, Fail("stale_snapshot", "element is outside window")
+		}
+		return p, nil
+	}
+	if !ownedByWindow(root, h, uint32(target.PID)) {
+		return Point{}, windowsPointFailure(target, point, hit, root, "other_window_at_point", nil)
+	}
+	var rect w.RECT
+	if ok, code := w.GetWindowRect(root, &rect); ok == 0 {
+		return Point{}, windowsPointFailure(target, point, hit, root, "popup_bounds_unverified", code)
+	}
+	if e.Bounds.X < float64(rect.Left) || e.Bounds.Y < float64(rect.Top) || e.Bounds.X+e.Bounds.Width > float64(rect.Right) || e.Bounds.Y+e.Bounds.Height > float64(rect.Bottom) {
+		return Point{}, windowsPointFailure(target, point, hit, root, "element_outside_popup", nil)
+	}
+	matched, err := b.popupElementAtPoint(ctx, point, b.elements[e.ID])
+	if contextErr := ctx.Err(); contextErr != nil {
+		return Point{}, contextErr
+	}
+	if err != nil {
+		return Point{}, windowsPointFailure(target, point, hit, root, "popup_element_unverified", err)
+	}
+	if !matched {
+		return Point{}, windowsPointFailure(target, point, hit, root, "popup_element_mismatch", nil)
+	}
+	// UIA calls can block while the popup moves, closes, or loses foreground.
+	current := w.WindowFromPoint(point)
+	currentRoot := w.GetAncestor(current, w.GA_ROOT)
+	if current != hit || currentRoot != root || !ownedByWindow(root, h, uint32(target.PID)) {
+		return Point{}, windowsPointFailure(target, point, current, currentRoot, "popup_hit_changed", nil)
+	}
+	if foreground := w.GetForegroundWindow(); foreground != h {
+		return Point{}, Fail("not_active", fmt.Sprintf("target_window_id=%s; foreground_window_id=%s", target.ID, windowID(foreground)))
+	}
+	return p, nil
+}
+
+func (b *winBackend) popupElementAtPoint(ctx context.Context, point w.POINT, expected *w.IUIAutomationElement) (bool, error) {
+	var hit *w.IUIAutomationElement
+	if err := hr(b.automation.ElementFromPoint(point, &hit)); err != nil {
+		return false, err
+	}
+	if hit == nil {
+		return false, errors.New("UIA reported no element at the popup point")
+	}
+	defer hit.Release()
+	// Hit testing can return a decorative child omitted by the observed control view.
+	var control *w.IUIAutomationElement
+	if err := hr(b.walker.NormalizeElement(hit, &control)); err != nil {
+		return false, err
+	}
+	if control == nil {
+		return false, errors.New("UIA reported no control at the popup point")
+	}
+	for depth := 0; control != nil; depth++ {
+		defer control.Release()
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		var same w.BOOL
+		if err := hr(b.automation.CompareElements(expected, control, &same)); err != nil || same != 0 {
+			return same != 0, err
+		}
+		// A button can expose its icon or text as a separate UIA element.
+		// Stop at the first control that could handle the action itself.
+		var kind w.UIA_CONTROLTYPE_ID
+		if err := hr(control.Get_CurrentControlType(&kind)); err != nil {
+			return false, err
+		}
+		if (kind != w.UIA_ImageControlTypeId && kind != w.UIA_TextControlTypeId) || depth == 63 {
+			break
+		}
+		var parent *w.IUIAutomationElement
+		if err := hr(b.walker.GetParentElement(control, &parent)); err != nil {
+			return false, err
+		}
+		control = parent
+	}
+	return false, nil
 }
 func (b *winBackend) Recognize(context.Context, Capture, int) ([]RecognizedText, bool, error) {
 	return nil, false, Fail("unsupported_operation", "OCR is available on macOS; this Windows distribution has no MSIX package identity")

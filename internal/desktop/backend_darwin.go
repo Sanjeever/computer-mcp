@@ -94,6 +94,13 @@ func (b *macBackend) CaptureWindow(ctx context.Context, w Window, r Rect, width 
 func (b *macBackend) CheckPoint(w Window, p Point, allowMenu bool) error {
 	return macCall("check_point", map[string]any{"window_id": w.ID, "x": p.X, "y": p.Y, "allow_menu": allowMenu}, nil)
 }
+func (b *macBackend) ElementClickPoint(_ context.Context, w Window, e Element) (Point, error) {
+	p := e.Bounds.Center()
+	if !w.Bounds.Contains(p) {
+		return Point{}, Fail("stale_snapshot", "element is outside window")
+	}
+	return p, b.CheckPoint(w, p, false)
+}
 func (b *macBackend) Recognize(ctx context.Context, capture Capture, limit int) ([]RecognizedText, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err

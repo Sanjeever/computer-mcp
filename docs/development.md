@@ -33,6 +33,8 @@ Window and element IDs follow native identity to keep title edits and traversal 
 
 Window capture and screen capture are explicit choices because an unobscured window image and the visible input target can differ. OCR text from screen capture may belong to an overlapping window, so it stays separate from native controls. The Windows npm distribution has no MSIX package identity, so OCR is currently available through macOS Vision. See the [tool contract](../README.md#tools).
 
+Windows element clicks use UIA bounds in physical desktop pixels. For a hit in another root window, the native backend verifies its same-process owner chain and checks that it contains the observed element's bounds. UIA hit testing matches the requested element in the control view and can follow an icon or text child to its control. The owned-popup fixture exercises a control beyond the main window, an unowned covering window, and a covering control inside the popup.
+
 ## Verification
 
 [CI](../.github/workflows/ci.yml) defines the full check sequence and uploads the tarballs after the package smoke checks. Use its macOS deployment environment when running Go tests or vet directly. [`build:native`](../scripts/native.ts) sets the deployment target for native builds.

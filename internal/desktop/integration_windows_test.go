@@ -23,10 +23,13 @@ import (
 const fixtureDialogTitle = "Computer MCP owned fixture dialog"
 
 type windowsFixture struct {
-	Window     Window
-	Editor     w.HWND
-	Canvas     w.HWND
-	InactiveID string
+	Window      Window
+	Editor      w.HWND
+	Canvas      w.HWND
+	InactiveID  string
+	Popup       w.HWND
+	PopupCover  w.HWND
+	WindowCover w.HWND
 }
 
 func TestWindowsFixtureProcess(t *testing.T) {
@@ -70,12 +73,24 @@ func TestWindowsFixtureProcess(t *testing.T) {
 			t.Fatal(code)
 		}
 	}
+	fixture := windowsFixture{Editor: editor, Canvas: canvas}
+	targets := []w.HWND{canvas, root, editor}
+	var popupButton w.HWND
+	if os.Getenv("COMPUTER_MCP_WINDOWS_POPUP_TEST") == "1" {
+		popupButton = createWindowsPopupFixture(t, root, &fixture)
+		targets = append(targets, fixture.Popup)
+	}
 	var mouseEvents []string
-	for _, target := range []w.HWND{canvas, root, editor} {
+	for _, target := range targets {
 		var original uintptr
 		procedure := syscall.NewCallback(func(h w.HWND, message uint32, param w.WPARAM, data w.LPARAM) w.LRESULT {
 			if openDialog != 0 && h == root && message == w.WM_COMMAND && w.HWND(data) == openDialog && uint32(param)>>16 == w.BN_CLICKED {
 				w.MessageBoxW(root, w.StrToPwstr("Close this fixture dialog to return to the main window."), w.StrToPwstr(fixtureDialogTitle), w.MB_OK)
+				return 0
+			}
+			if popupButton != 0 && h == fixture.Popup && message == w.WM_COMMAND && w.HWND(data) == popupButton && uint32(param)>>16 == w.BN_CLICKED {
+				w.SetWindowTextW(editor, w.StrToPwstr("popup clicked"))
+				w.DestroyWindow(h)
 				return 0
 			}
 			if h == canvas && message == w.WM_APP {
@@ -124,7 +139,10 @@ func TestWindowsFixtureProcess(t *testing.T) {
 	}
 	var rect w.RECT
 	w.GetWindowRect(root, &rect)
-	fixture := windowsFixture{Window: Window{ID: windowID(root), PID: os.Getpid(), Title: "Computer MCP Windows fixture", Bounds: winRect(rect)}, Editor: editor, Canvas: canvas}
+	fixture.Window = Window{ID: windowID(root), PID: os.Getpid(), Title: "Computer MCP Windows fixture", Bounds: winRect(rect)}
+	if fixture.Popup != 0 {
+		w.ShowWindow(fixture.Popup, w.SW_SHOWNOACTIVATE)
+	}
 	if os.Getenv("COMPUTER_MCP_WINDOWS_ACTIVATION_TEST") == "1" && w.GetForegroundWindow() == root {
 		other, code := w.CreateWindowExW(0, w.StrToPwstr("STATIC"), w.StrToPwstr("Computer MCP inactive fixture"), w.WS_OVERLAPPEDWINDOW, 300, 300, 400, 200, 0, 0, 0, nil)
 		if other == 0 {

@@ -127,6 +127,7 @@ type Backend interface {
 	Capture(context.Context, Rect, int) (Capture, error)
 	CaptureWindow(context.Context, Window, Rect, int) (Capture, error)
 	CheckPoint(window Window, point Point, allowMenu bool) error
+	ElementClickPoint(context.Context, Window, Element) (Point, error)
 	Recognize(context.Context, Capture, int) ([]RecognizedText, bool, error)
 	Close()
 }

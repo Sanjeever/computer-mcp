@@ -643,6 +643,9 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	var p desktop.Point
 	if a.Point != nil {
 		p, err = imagePoint(snap, *a.Point)
+		if err == nil && snap.Window != nil {
+			err = s.backend.CheckPoint(*snap.Window, p, snap.CaptureMode == "screen")
+		}
 	} else {
 		var old *desktop.Element
 		for i := range snap.Elements {
@@ -659,18 +662,12 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 		if err == nil && (now.Role != old.Role || clip(now.Name, 512) != old.Name || now.Bounds != old.Bounds || !now.Enabled || !now.Bounds.Valid()) {
 			err = desktop.Fail("stale_snapshot", a.ElementID)
 		}
-		p = now.Bounds.Center()
-		if err == nil && !snap.Window.Bounds.Contains(p) {
-			err = desktop.Fail("stale_snapshot", "element is outside window")
+		if err == nil {
+			p, err = s.backend.ElementClickPoint(ctx, *snap.Window, now)
 		}
 	}
 	if err != nil {
 		return response{err: err}
-	}
-	if snap.Window != nil {
-		if err := s.backend.CheckPoint(*snap.Window, p, a.Point != nil && snap.CaptureMode == "screen"); err != nil {
-			return response{err: err}
-		}
 	}
 	s.snapshot = nil
 	desktop.ReportStage(ctx, "input")
