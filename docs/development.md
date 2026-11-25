@@ -43,7 +43,7 @@ Windows follow-up checks the foreground GUI thread's menu state for native menus
 
 ## Verification
 
-[CI](../.github/workflows/ci.yml) defines the full check sequence and uploads the tarballs after the package smoke checks. Use its macOS deployment environment when running Go tests or vet directly. [`build:native`](../scripts/native.ts) sets the deployment target for native builds.
+[CI](../.github/workflows/ci.yml) packs the launcher once on Linux to preserve the executable mode of its entry point. Both native jobs install and test that tarball, then upload their respective platform packages. Use the CI macOS deployment environment when running Go tests or vet directly. [`build:native`](../scripts/native.ts) sets the deployment target for native builds.
 
 The [server tests](../internal/server/) use a fake backend for desktop-dependent contract checks. The [catalog tests](../internal/i18n/i18n_test.go) check key parity, and the [launcher tests](../src/launcher.test.ts) cover package selection and missing dependencies. Native interaction coverage is maintained with the [macOS desktop](../internal/desktop/integration_darwin_test.go), [macOS server](../internal/server/coordinates_darwin_test.go), [Windows desktop](../internal/desktop/integration_windows_test.go), and [Windows capture](../internal/desktop/capture_windows_test.go) fixtures.
 

@@ -37,20 +37,22 @@ jobs:
           registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@v4
         with:
+          name: npm-launcher
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
           name: npm-darwin-arm64
           path: artifacts
       - uses: actions/download-artifact@v4
         with:
           name: npm-win32-x64
-          path: artifacts-windows
+          path: artifacts
       - name: Verify version and collect packages
         shell: bash
         run: |
           version=$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')
           test "$GITHUB_REF_TYPE" = tag
           test "$GITHUB_REF_NAME" = "v$version"
-          cmp "artifacts/sanjeever-computer-mcp-$version.tgz" "artifacts-windows/sanjeever-computer-mcp-$version.tgz"
-          cp artifacts-windows/*-win32-x64-*.tgz artifacts/
       - name: Publish native packages, then launcher
         shell: bash
         run: |

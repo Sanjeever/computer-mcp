@@ -43,7 +43,7 @@ Windows 后续观察通过前台 GUI 线程的菜单状态识别原生菜单，�
 
 ## 验证
 
-[CI](../.github/workflows/ci.yml) 定义完整检查流程，在安装包冒烟检查后上传 tarball。macOS 直接运行 Go 测试或 vet 时，沿用 CI 中的部署环境变量。[`build:native`](../scripts/native.ts) 会为原生构建设置部署目标。
+[CI](../.github/workflows/ci.yml) 在 Linux 上打包一次启动器，保留入口文件的可执行权限。两个原生任务安装并验证这一份 tarball，再各自上传平台包。macOS 直接运行 Go 测试或 vet 时，沿用 CI 中的部署环境变量。[`build:native`](../scripts/native.ts) 会为原生构建设置部署目标。
 
 [服务端测试](../internal/server/) 中涉及桌面的契约验证使用假后端。[翻译测试](../internal/i18n/i18n_test.go) 检查语言键一致性，[启动器测试](../src/launcher.test.ts) 检查平台包选择和缺包错误。原生交互覆盖范围见 [macOS 桌面](../internal/desktop/integration_darwin_test.go)、[macOS 服务端](../internal/server/coordinates_darwin_test.go)、[Windows 桌面](../internal/desktop/integration_windows_test.go)和 [Windows 截图](../internal/desktop/capture_windows_test.go)夹具测试。
 

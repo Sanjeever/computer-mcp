@@ -1,28 +1,28 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { platformPackage } from "../src/launcher.js";
 
 const artifacts = resolve("artifacts");
-const files = readdirSync(artifacts);
-const native = files.find(
-  (name) =>
-    name.includes(`computer-mcp-${process.platform}-${process.arch}-`) && name.endsWith(".tgz"),
-);
-const launcher = files.find(
-  (name) => /^sanjeever-computer-mcp-\d/.test(name) && name.endsWith(".tgz"),
-);
-if (!native || !launcher) throw new Error("Pack both the native and launcher packages first");
+const { name, version } = JSON.parse(readFileSync("package.json", "utf8")) as {
+  name: string;
+  version: string;
+};
+const native = platformPackage(process.platform, process.arch);
+const tarball = (packageName: string) =>
+  join(artifacts, `${packageName.slice(1).replace("/", "-")}-${version}.tgz`);
 const temporary = mkdtempSync(join(tmpdir(), "computer-mcp-pack-"));
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const windows = process.platform === "win32";
+const npm = windows ? "npm.cmd" : "npm";
 try {
   writeFileSync(join(temporary, "package.json"), JSON.stringify({ private: true }));
   execFileSync(
     npm,
     [
       "install",
-      join(artifacts, native),
-      join(artifacts, launcher),
+      tarball(native),
+      tarball(name),
       "--offline",
       "--ignore-scripts",
       "--no-audit",
@@ -30,14 +30,18 @@ try {
       "--cache",
       join(temporary, "cache"),
     ],
-    { cwd: temporary, stdio: "inherit", shell: process.platform === "win32" },
+    { cwd: temporary, stdio: "inherit", shell: windows },
   );
+  const installed = join(temporary, "node_modules");
+  const executable = join(installed, ".bin", windows ? "computer-mcp.cmd" : "computer-mcp");
+  accessSync(executable, windows ? constants.F_OK : constants.X_OK);
   execFileSync(
     process.execPath,
     [
       "--import=tsx",
       "scripts/smoke.ts",
-      join(temporary, "node_modules", "@sanjeever", "computer-mcp", "dist", "cli.js"),
+      windows ? join(installed, name, "dist", "cli.js") : executable,
+      version,
     ],
     { stdio: "inherit" },
   );

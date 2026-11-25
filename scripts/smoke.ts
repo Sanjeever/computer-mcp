@@ -52,7 +52,9 @@ try {
     capabilities: {},
     clientInfo: { name: "smoke", version: "1" },
   });
-  assert.equal((initialized.serverInfo as { name: string }).name, "computer-mcp");
+  const server = initialized.serverInfo as { name: string; version: string };
+  assert.equal(server.name, "computer-mcp");
+  if (process.argv[3]) assert.equal(server.version, process.argv[3]);
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
   const tools = await request("tools/list", {});
   assert.equal((tools.tools as unknown[]).length, 11);

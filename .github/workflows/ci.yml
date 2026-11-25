@@ -11,8 +11,32 @@ permissions:
   contents: read
 
 jobs:
+  launcher:
+    name: Package launcher
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm fmt:check
+      - run: pnpm build
+      - run: npm pack --pack-destination artifacts --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-launcher
+          path: artifacts/*.tgz
+          if-no-files-found: error
+
   verify:
     name: Verify (${{ matrix.platform }})
+    needs: launcher
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +52,8 @@ jobs:
       CGO_LDFLAGS: ${{ matrix.platform == 'darwin-arm64' && '-mmacosx-version-min=14.0' || '' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -37,23 +63,22 @@ jobs:
           node-version: "22"
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm fmt:check
       - run: pnpm test
       - run: go test ./...
       - run: go vet ./...
       - name: Check Go formatting
         shell: bash
         run: test -z "$(gofmt -l cmd internal)"
-      - run: pnpm build
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-launcher
+          path: artifacts
       - run: pnpm build:native
       - run: pnpm smoke
       - run: pnpm pack:platform
-      - run: npm pack --pack-destination artifacts --ignore-scripts
       - run: pnpm pack:check
       - uses: actions/upload-artifact@v4
         with:
           name: npm-${{ matrix.platform }}
-          path: artifacts/*.tgz
+          path: artifacts/sanjeever-computer-mcp-${{ matrix.platform }}-*.tgz
           if-no-files-found: error
