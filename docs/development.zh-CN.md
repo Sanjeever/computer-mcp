@@ -65,6 +65,8 @@ Remove-Item Env:COMPUTER_MCP_NATIVE_TEST
 
 测试期间保持桌面空闲，让夹具窗口保持焦点。Windows 夹具可在准备阶段点击已确认属于自身的编辑控件以获取前台焦点。macOS 缺少辅助功能或屏幕录制权限时，夹具会报告跳过原因。托管 CI 不启用交互夹具，也不验证权限归属或签名升级。
 
+Windows 截图夹具验证编辑控件的像素更新，并对照专用 WPF 窗口的窗口截图和屏幕截图。WPF 夹具使用 Windows PowerShell，会随测试结果记录渲染层级和 DPI。
+
 macOS 的 `stdio drawing batch` 用例以两种方式发送同样的 8 笔、256 个路径点。一种是逐笔调用带 `observe_after` 的 `computer_drag`，另一种是调用一次 `computer_batch`。用例读取夹具事件验证笔画顺序和独立性，并记录首次观察之后的调用数、JPEG 数和耗时。`TestNativeWindowsDrawingBatch` 通过 Windows stdio 服务检查每笔独立的按下、拖拽和释放序列，以及末尾的 JPEG。
 
 Windows 测试机没有 Go 工具链时，可复制 `go test -c ./internal/desktop` 生成的桌面测试程序，以及同一份源码构建的原生服务。运行夹具前，将 `COMPUTER_MCP_TEST_BINARY` 设为服务的绝对路径。后续观察夹具通过 stdio 服务验证所属对话框、Win32 右键菜单和无标题所属弹层。
