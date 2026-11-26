@@ -183,3 +183,13 @@ Claude Code used `deepseek-flash` (high reasoning effort) and Computer MCP to dr
 Prompt translated from Chinese
 
 > Use Computer MCP to draw a retro poster in Windows Paint inviting people to vacation on Saturn. Make Saturn’s rings stand out, and include a means of transportation you invent. You can make up the place names on the poster, too.
+
+## Recreating The Starry Night in Paint
+
+Claude Code used `deepseek-flash` (high reasoning effort) and Computer MCP to recreate Vincent van Gogh’s *The Starry Night* in an existing Paint window on Windows 10.
+
+![Paint recreation of The Starry Night, with yellow stars, a blue swirl, and a dark cypress](images/starry-night-paint.png)
+
+Prompt translated from Chinese
+
+> Use Computer MCP to recreate *The Starry Night* (Dutch: *De sterrennacht*, English: *The Starry Night*) by Dutch Post-Impressionist painter Vincent van Gogh as faithfully as possible in the existing Paint window. Do not resize the Paint window.

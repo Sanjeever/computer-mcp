@@ -189,3 +189,13 @@ Claude Code 使用 `deepseek-flash`（思考强度为 high），通过 Computer 
 原始提示词
 
 > 用 Computer MCP 在 Windows 画图里画一张邀请人们去土星度假的复古海报。把土星环画得很醒目，再安排一种你发明的交通工具。海报上的地名也可以自己编。
+
+## 用画图临摹《星夜》
+
+Claude Code 使用 `deepseek-flash`（思考强度为 high），通过 Computer MCP 操作 Windows 10 中已打开的画图窗口，临摹了文森特·梵高的《星夜》。
+
+![画图临摹的《星夜》，画着黄色星点、蓝色旋涡和深色柏树](images/starry-night-paint.png)
+
+原始提示词
+
+> 使用 Computer MCP 在已有的画图窗口里绘制荷兰后印象派画家文森特·梵高的《星夜》（荷兰语：De sterrennacht，英语：The Starry Night），尽最大可能进行还原。注意不要调整画图窗口的大小。
