@@ -591,6 +591,12 @@ func TestNativeWindowsMouse(t *testing.T) {
 }
 
 func TestNativeWindowsDrawingBatch(t *testing.T) {
+	for _, mode := range []string{"window", "screen"} {
+		t.Run(mode, func(t *testing.T) { testNativeWindowsDrawingBatch(t, mode) })
+	}
+}
+
+func testNativeWindowsDrawingBatch(t *testing.T, mode string) {
 	fixture, call := startWindowsObservationFixture(t)
 	requireFixtureActive(t, fixture)
 	var rect w.RECT
@@ -598,10 +604,12 @@ func TestNativeWindowsDrawingBatch(t *testing.T) {
 		t.Fatal(code)
 	}
 	center := winRect(rect).Center()
-	region := Rect{X: center.X - 80, Y: center.Y - 25, Width: 160, Height: 50}
+	region := Rect{X: center.X - 320, Y: center.Y - 24, Width: 640, Height: 48}
 	var source windowsObservation
-	if !call("computer_observe", map[string]any{"window_id": fixture.Window.ID, "screenshot_only": true, "region": region}, &source) ||
-		source.SnapshotID == "" || source.Region != region || source.ImageWidth == 0 || source.ImageHeight == 0 {
+	if !call("computer_observe", map[string]any{
+		"window_id": fixture.Window.ID, "screenshot_only": true, "capture_mode": mode, "region": region, "max_width": 320,
+	}, &source) || source.SnapshotID == "" || source.Region != region || source.CaptureMode != mode ||
+		source.ImageWidth != 320 || source.ImageHeight != 24 {
 		t.Fatalf("drawing observation: %+v", source)
 	}
 	left, right := float64(source.ImageWidth)/4, 3*float64(source.ImageWidth)/4
@@ -622,7 +630,8 @@ func TestNativeWindowsDrawingBatch(t *testing.T) {
 	if !call("computer_batch", map[string]any{
 		"snapshot_id": source.SnapshotID, "steps": steps, "observe_after": map[string]any{"screenshot": true},
 	}, &result) || len(result.Steps) != len(steps) || result.Observation.SnapshotID == "" || result.Observation.SnapshotID == source.SnapshotID ||
-		result.Observation.Window.ID != fixture.Window.ID || result.Observation.Region != region || !result.Observation.ScreenshotOnly {
+		result.Observation.Window.ID != fixture.Window.ID || result.Observation.Region != region || !result.Observation.ScreenshotOnly ||
+		result.Observation.CaptureMode != mode || result.Observation.ImageWidth != 320 || result.Observation.ImageHeight != 24 {
 		t.Fatalf("drawing batch result: %+v", result)
 	}
 	for i, step := range result.Steps {
@@ -653,6 +662,14 @@ func TestNativeWindowsDrawingBatch(t *testing.T) {
 	}
 	if w.GetAsyncKeyState(int32(w.VK_LBUTTON)) < 0 {
 		t.Fatal("left mouse button still held after the batch")
+	}
+	var cursor w.POINT
+	if ok, code := w.GetCursorPos(&cursor); ok == 0 {
+		t.Fatal(code)
+	}
+	want := w.POINT{X: int32(center.X) - 160, Y: int32(center.Y) + 12}
+	if cursor != want {
+		t.Fatalf("final desktop point: got %+v, want %+v", cursor, want)
 	}
 }
 

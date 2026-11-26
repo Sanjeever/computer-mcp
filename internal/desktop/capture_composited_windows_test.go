@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"image/jpeg"
 	"os"
@@ -104,6 +105,28 @@ func TestNativeWindowsCompositedCapture(t *testing.T) {
 	}
 	if err := checkCompositedCapture(window); err != nil {
 		t.Fatalf("window capture: %v", err)
+	}
+
+	// Cover one of the pixels shown in the window image with another fixture.
+	point := region.Center()
+	point.X -= region.Width / 4
+	cover, code := w.CreateWindowExW(w.WS_EX_TOPMOST|w.WS_EX_NOACTIVATE, w.StrToPwstr("BUTTON"), w.StrToPwstr("Computer MCP capture cover"),
+		w.WS_POPUP|w.WS_VISIBLE, int32(point.X)-10, int32(point.Y)-10, 40, 40, 0, 0, 0, nil)
+	if cover == 0 {
+		t.Fatal(code)
+	}
+	defer w.DestroyWindow(cover)
+	if ok, code := w.SetWindowPos(cover, w.HWND_TOPMOST, 0, 0, 0, 0, w.SWP_NOACTIVATE|w.SWP_NOMOVE|w.SWP_NOSIZE); ok == 0 {
+		t.Fatal(code)
+	}
+	if hit := w.WindowFromPoint(w.POINT{X: int32(point.X), Y: int32(point.Y)}); hit != cover {
+		t.Fatal("the dedicated cover did not occupy the sample point")
+	}
+	for _, screen := range []bool{false, true} {
+		var failure *Error
+		if err := b.CheckPoint(target, point, screen); !errors.As(err, &failure) || failure.Code != "target_obscured" {
+			t.Fatalf("covered sample point, screen=%t: got %v, want target_obscured", screen, err)
+		}
 	}
 }
 

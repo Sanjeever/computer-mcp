@@ -67,7 +67,7 @@ Keep the desktop idle so the fixture windows retain focus. Windows fixture setup
 
 The Windows capture fixtures check updates to the pixels of an edit control and compare window and screen capture of a dedicated WPF window. The WPF fixture uses Windows PowerShell and logs its rendering tier and DPI with the test result.
 
-The macOS `stdio drawing batch` case sends the same eight strokes and 256 points through sequential `computer_drag` calls with `observe_after` and through one `computer_batch` call. It verifies order and stroke boundaries from fixture events and logs calls, JPEGs, and elapsed time after the initial observation. `TestNativeWindowsDrawingBatch` checks independent press, drag, and release sequences and the follow-up JPEG through the Windows stdio server.
+The macOS `stdio drawing batch` case sends the same eight strokes and 256 points through sequential `computer_drag` calls with `observe_after` and through one `computer_batch` call. It verifies order and stroke boundaries from fixture events and logs calls, JPEGs, and elapsed time after the initial observation. `TestNativeWindowsDrawingBatch` uses cropped and scaled window and screen images through the Windows stdio server. It checks independent press, drag, and release sequences, the final desktop point, and the follow-up JPEG.
 
 On a Windows test machine without the Go toolchain, copy the desktop test executable from `go test -c ./internal/desktop` and a native server built from the same checkout. Set `COMPUTER_MCP_TEST_BINARY` to the server's absolute path before running the fixture executable. The follow-up observation fixtures exercise an owned dialog, a Win32 context menu, and a titleless owned popup through the stdio server.
 
