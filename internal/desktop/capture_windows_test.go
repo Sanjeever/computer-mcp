@@ -42,9 +42,6 @@ func TestWindowsCaptureDimensions(t *testing.T) {
 func TestNativeWindowsCapture(t *testing.T) {
 	b, fixture := startWindowsFixture(t)
 	requireFixtureActive(t, fixture)
-	text := w.StrToPwstr("Computer MCP capture 0123456789")
-	fixtureMessage(t, fixture.Editor, w.WM_SETTEXT, 0, w.LPARAM(uintptr(unsafe.Pointer(text))))
-	runtime.KeepAlive(text)
 	var rect w.RECT
 	if ok, code := w.GetWindowRect(fixture.Editor, &rect); ok == 0 {
 		t.Fatal(code)
@@ -54,37 +51,53 @@ func TestNativeWindowsCapture(t *testing.T) {
 	for _, mode := range []string{"window", "screen"} {
 		for _, width := range []int{1440, 550} {
 			t.Logf("%s_%d", mode, width)
-			var capture Capture
-			var err error
-			if mode == "window" {
-				capture, err = b.CaptureWindow(context.Background(), fixture.Window, region, width)
-			} else {
-				capture, err = b.Capture(context.Background(), region, width)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			img, err := jpeg.Decode(bytes.NewReader(capture.Data))
-			if err != nil {
-				t.Fatal(err)
-			}
-			wantWidth := min(width, int(region.Width))
-			wantHeight := int(region.Height) * wantWidth / int(region.Width)
-			if capture.Width != wantWidth || capture.Height != wantHeight || img.Bounds().Dx() != wantWidth || img.Bounds().Dy() != wantHeight {
-				t.Fatalf("capture dimensions: %dx%d, JPEG %v", capture.Width, capture.Height, img.Bounds())
-			}
-			dark := 0
-			for y := 3; y < min(40, img.Bounds().Dy()); y++ {
-				for x := 5; x < min(300, img.Bounds().Dx()); x++ {
-					r, g, b, _ := img.At(x, y).RGBA()
-					if r+g+b < 3*32768 {
-						dark++
-					}
+			for _, value := range []string{"", "Computer MCP capture 0123456789", ""} {
+				text := w.StrToPwstr(value)
+				fixtureMessage(t, fixture.Editor, w.WM_SETTEXT, 0, w.LPARAM(uintptr(unsafe.Pointer(text))))
+				runtime.KeepAlive(text)
+				if w.RedrawWindow(fixture.Editor, nil, 0, w.RDW_INVALIDATE|w.RDW_UPDATENOW) == 0 {
+					t.Fatal("could not repaint the fixture editor")
 				}
-			}
-			if dark < 20 {
-				t.Fatal("fixture text is missing from captured pixels")
+				requireFixtureActive(t, fixture)
+				var capture Capture
+				var err error
+				if mode == "window" {
+					capture, err = b.CaptureWindow(context.Background(), fixture.Window, region, width)
+				} else {
+					capture, err = b.Capture(context.Background(), region, width)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				checkWindowsCapture(t, capture, region, width, value != "")
 			}
 		}
+	}
+}
+
+func checkWindowsCapture(t *testing.T, capture Capture, region Rect, width int, hasText bool) {
+	t.Helper()
+	img, err := jpeg.Decode(bytes.NewReader(capture.Data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWidth := min(width, int(region.Width))
+	wantHeight := int(region.Height) * wantWidth / int(region.Width)
+	if capture.Width != wantWidth || capture.Height != wantHeight || img.Bounds().Dx() != wantWidth || img.Bounds().Dy() != wantHeight {
+		t.Fatalf("capture dimensions: %dx%d, JPEG %v; want %dx%d", capture.Width, capture.Height, img.Bounds(), wantWidth, wantHeight)
+	}
+	scale := float64(wantWidth) / region.Width
+	dark := 0
+	// Sample within the editor, beyond its border and caret.
+	for y := int(6 * scale); y < int(40*scale); y++ {
+		for x := int(18 * scale); x < int(300*scale); x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r+g+b < 3*32768 {
+				dark++
+			}
+		}
+	}
+	if hasText && dark < 20 || !hasText && dark > 5 {
+		t.Fatalf("fixture text=%t, dark pixels=%d", hasText, dark)
 	}
 }
