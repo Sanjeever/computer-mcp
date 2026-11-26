@@ -4,11 +4,12 @@
 
 Computer MCP 通过 stdio MCP 为 AI Agent 提供原生桌面操作。Agent 可用无障碍树和截图观察窗口，再点击、输入、滚动或拖拽。
 
-## 用无边记画一张明信片
+## 用 Computer MCP 绘图
 
-![明信片「愿你一路有光」，画着海边的灯塔和橙色月亮](https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/freeform-postcard.png)
-
-Codex 通过 Computer MCP 操作 macOS「无边记」，画出这张明信片。[原始提示词和示例](https://github.com/Sanjeever/computer-mcp/blob/main/docs/usage.zh-CN.md#用无边记画一张明信片)
+|                                                                                                                                 Windows 10 · 画图                                                                                                                                 |                                                                                                                                  macOS · 无边记                                                                                                                                   |
+| :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+| [<img src="https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/saturn-ringhaven-poster.png" alt="环港复古旅行海报，画着土星环和环帆号" width="210">](https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/saturn-ringhaven-poster.png) | [<img src="https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/freeform-postcard.png" alt="明信片「愿你一路有光」，画着海边的灯塔和橙色月亮" width="435">](https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/freeform-postcard.png) |
+|                                                                             [Claude Code · 环港海报](https://github.com/Sanjeever/computer-mcp/blob/main/docs/usage.zh-CN.md#用画图绘制土星旅行海报)                                                                              |                                                                                [Codex · 灯塔明信片](https://github.com/Sanjeever/computer-mcp/blob/main/docs/usage.zh-CN.md#用无边记画一张明信片)                                                                                 |
 
 ## 接入
 

@@ -173,3 +173,13 @@ Prompt translated from Chinese
 > Open Freeform on macOS and draw a postcard you would like to give to a stranger. You decide what to draw and how to draw it.
 >
 > Please do not resize the Freeform window.
+
+## Drawing a Saturn travel poster in Paint
+
+Claude Code used `deepseek-flash` (high reasoning effort) and Computer MCP to draw this retro travel poster in Paint on Windows 10. The poster invites visitors to sail through Saturn’s rings aboard the Halo-Sail Clipper and vacation in Ringhaven.
+
+![Retro travel poster dominated by Saturn’s rings, with the Halo-Sail Clipper above the destination name Ringhaven](images/saturn-ringhaven-poster.png)
+
+Prompt translated from Chinese
+
+> Use Computer MCP to draw a retro poster in Windows Paint inviting people to vacation on Saturn. Make Saturn’s rings stand out, and include a means of transportation you invent. You can make up the place names on the poster, too.

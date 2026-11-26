@@ -4,11 +4,12 @@
 
 Computer MCP gives AI agents native desktop access over stdio MCP. Agents can observe windows through accessibility trees and screenshots, then click, type, scroll, or drag.
 
-## Drawing a postcard in Freeform
+## Drawing with Computer MCP
 
-![A lighthouse and orange moon over the sea on a postcard captioned “May you have light along the way”](https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/freeform-postcard.png)
-
-Codex drew this postcard in macOS Freeform using Computer MCP. [Prompt and example](https://github.com/Sanjeever/computer-mcp/blob/main/docs/usage.md#drawing-a-postcard-in-freeform)
+|                                                                                                                                                      Windows 10 · Paint                                                                                                                                                       |                                                                                                                                                           macOS · Freeform                                                                                                                                                            |
+| :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+| [<img src="https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/saturn-ringhaven-poster.png" alt="Retro Ringhaven travel poster featuring Saturn’s rings and the Halo-Sail Clipper" width="210">](https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/saturn-ringhaven-poster.png) | [<img src="https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/freeform-postcard.png" alt="A lighthouse and orange moon over the sea on a postcard captioned ‘May you have light along the way’" width="435">](https://raw.githubusercontent.com/Sanjeever/computer-mcp/main/docs/images/freeform-postcard.png) |
+|                                                                                          [Claude Code · Ringhaven poster](https://github.com/Sanjeever/computer-mcp/blob/main/docs/usage.md#drawing-a-saturn-travel-poster-in-paint)                                                                                          |                                                                                                    [Codex · Lighthouse postcard](https://github.com/Sanjeever/computer-mcp/blob/main/docs/usage.md#drawing-a-postcard-in-freeform)                                                                                                    |
 
 ## Connect
 

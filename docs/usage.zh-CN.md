@@ -179,3 +179,13 @@ Codex 使用 GPT-6.2-Sol（high），通过 Computer MCP 操作 macOS「无边�
 > 打开 macOS 的「无边记」，画一张你愿意送给陌生人的明信片。题材和画法都由你决定。
 >
 > 请不要调整「无边记」的窗口大小。
+
+## 用画图绘制土星旅行海报
+
+Claude Code 使用 `deepseek-flash`（思考强度为 high），通过 Computer MCP 操作 Windows 10 自带的画图，绘制了这张复古旅行海报。海报邀请旅客乘「环帆号」穿过土星环，前往「环港」度假。
+
+![复古土星旅行海报，醒目的土星环下方画着环帆号和目的地「环港」](images/saturn-ringhaven-poster.png)
+
+原始提示词
+
+> 用 Computer MCP 在 Windows 画图里画一张邀请人们去土星度假的复古海报。把土星环画得很醒目，再安排一种你发明的交通工具。海报上的地名也可以自己编。
