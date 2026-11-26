@@ -1,6 +1,6 @@
 {
   "name": "@sanjeever/computer-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Native macOS and Windows computer use over stdio MCP",
   "license": "MIT",
   "repository": {
@@ -42,8 +42,8 @@
     "vitest": "5.1.0"
   },
   "optionalDependencies": {
-    "@sanjeever/computer-mcp-darwin-arm64": "1.0.0",
-    "@sanjeever/computer-mcp-win32-x64": "1.0.0"
+    "@sanjeever/computer-mcp-darwin-arm64": "1.0.1",
+    "@sanjeever/computer-mcp-win32-x64": "1.0.1"
   },
   "engines": {
     "node": ">=22"
