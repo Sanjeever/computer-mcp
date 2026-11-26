@@ -63,7 +63,7 @@ func New() (Backend, error) {
 	if err = hr(b.automation.CreateCacheRequest(&b.cache)); err != nil {
 		return fail(err)
 	}
-	for _, property := range []w.UIA_PROPERTY_ID{w.UIA_NamePropertyId, w.UIA_LocalizedControlTypePropertyId, w.UIA_BoundingRectanglePropertyId, w.UIA_IsEnabledPropertyId, w.UIA_HasKeyboardFocusPropertyId, w.UIA_IsPasswordPropertyId, w.UIA_ValueValuePropertyId} {
+	for _, property := range []w.UIA_PROPERTY_ID{w.UIA_NamePropertyId, w.UIA_LocalizedControlTypePropertyId, w.UIA_BoundingRectanglePropertyId, w.UIA_IsEnabledPropertyId, w.UIA_HasKeyboardFocusPropertyId, w.UIA_IsPasswordPropertyId, w.UIA_ValueValuePropertyId, w.UIA_NativeWindowHandlePropertyId} {
 		if err = hr(b.cache.AddProperty(property)); err != nil {
 			return fail(err)
 		}
@@ -404,6 +404,14 @@ func (b *winBackend) Observe(ctx context.Context, target Window, options Observe
 func (b *winBackend) Resolve(id string) (Element, error) {
 	e := b.elements[id]
 	if e == nil {
+		return Element{}, Fail("stale_snapshot", id)
+	}
+	// The Windows 10 UIA proxy can refresh a cache after its HWND is destroyed.
+	var handle w.HWND
+	if err := hr(e.Get_CachedNativeWindowHandle(&handle)); err != nil {
+		return Element{}, err
+	}
+	if handle != 0 && w.IsWindow(handle) == 0 {
 		return Element{}, Fail("stale_snapshot", id)
 	}
 	var updated *w.IUIAutomationElement
