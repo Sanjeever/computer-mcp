@@ -446,7 +446,15 @@ func TestNativeWindowsClickObservation(t *testing.T) {
 	if err != nil || dialogHandle != w.GetForegroundWindow() {
 		t.Fatal("fixture dialog is not in the foreground")
 	}
-	button, _ := w.GetDlgItem(dialogHandle, int32(w.IDOK))
+	// MessageBoxW assigns the sole push button a system-dependent control ID.
+	buttonClass := w.StrToPwstr("Button")
+	button, code := w.FindWindowExW(dialogHandle, 0, buttonClass, nil)
+	if button == 0 {
+		t.Fatalf("resolve fixture dialog button: %v", code)
+	}
+	if other, _ := w.FindWindowExW(dialogHandle, button, buttonClass, nil); other != 0 {
+		t.Fatal("expected exactly one native push button in the fixture dialog")
+	}
 	var buttonBounds w.RECT
 	if ok, code := w.GetWindowRect(button, &buttonBounds); ok == 0 {
 		t.Fatalf("resolve fixture dialog button: %v", code)
