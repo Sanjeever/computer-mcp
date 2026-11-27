@@ -454,28 +454,58 @@ func (b *winBackend) Capture(ctx context.Context, r Rect, width int) (Capture, e
 		return Capture{}, Fail("invalid_argument", "capture region exceeds 40 million pixels; provide a smaller region")
 	}
 	ReportStage(ctx, "capture_image")
-	source, err := screenshot.Capture(int(r.X), int(r.Y), int(r.Width), int(r.Height))
+	source, err := captureWindowsScreen(r)
 	if err != nil {
-		return Capture{}, Fail("native_error", err.Error())
+		return Capture{}, err
 	}
 	ReportStage(ctx, "capture_encode")
 	return encodeCapture(source, width)
 }
+
+func captureWindowsScreen(r Rect) (*image.RGBA, error) {
+	img, err := screenshot.Capture(int(r.X), int(r.Y), int(r.Width), int(r.Height))
+	if err != nil {
+		return nil, Fail("native_error", err.Error())
+	}
+	return img, nil
+}
+
+func (b *winBackend) SampleScreen(ctx context.Context, region Rect, maxWidth, maxHeight int) (ScreenSample, error) {
+	if err := ctx.Err(); err != nil {
+		return ScreenSample{}, err
+	}
+	img, err := captureWindowsScreen(region)
+	capturedAt := time.Now()
+	if err != nil {
+		return ScreenSample{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return ScreenSample{}, err
+	}
+	if img.Bounds().Dx() > maxWidth || img.Bounds().Dy() > maxHeight {
+		img = scaleCapture(img, maxWidth, maxHeight)
+	}
+	return ScreenSample{Image: img, CapturedAt: capturedAt}, nil
+}
+
+func scaleCapture(source image.Image, maxWidth, maxHeight int) *image.RGBA {
+	w, h := float64(source.Bounds().Dx()), float64(source.Bounds().Dy())
+	scale := math.Min(1, math.Min(float64(maxWidth)/w, float64(maxHeight)/h))
+	resized := image.NewRGBA(image.Rect(0, 0, max(1, int(w*scale)), max(1, int(h*scale))))
+	draw.ApproxBiLinear.Scale(resized, resized.Bounds(), source, source.Bounds(), draw.Src, nil)
+	return resized
+}
+
 func encodeCapture(source image.Image, width int) (Capture, error) {
-	r := Rect{Width: float64(source.Bounds().Dx()), Height: float64(source.Bounds().Dy())}
-	scale := math.Min(1, math.Min(float64(width)/r.Width, 2560/r.Height))
-	ow, oh := max(1, int(r.Width*scale)), max(1, int(r.Height*scale))
-	var img image.Image = source
-	if scale < 1 {
-		resized := image.NewRGBA(image.Rect(0, 0, ow, oh))
-		draw.ApproxBiLinear.Scale(resized, resized.Bounds(), source, source.Bounds(), draw.Src, nil)
-		img = resized
+	img := source
+	if img.Bounds().Dx() > width || img.Bounds().Dy() > 2560 {
+		img = scaleCapture(source, width, 2560)
 	}
 	var output bytes.Buffer
 	if err := jpeg.Encode(&output, img, &jpeg.Options{Quality: 80}); err != nil {
 		return Capture{}, err
 	}
-	return Capture{output.Bytes(), ow, oh}, nil
+	return Capture{output.Bytes(), img.Bounds().Dx(), img.Bounds().Dy()}, nil
 }
 func (b *winBackend) CheckPoint(target Window, p Point, _ bool) error {
 	_, err := checkWindowsPoint(&target, w.POINT{X: int32(p.X), Y: int32(p.Y)})

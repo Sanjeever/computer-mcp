@@ -3,8 +3,10 @@ package desktop
 import (
 	"context"
 	"fmt"
+	"image"
 	"math"
 	"strings"
+	"time"
 )
 
 type Rect struct {
@@ -129,6 +131,16 @@ type Capture struct {
 	Data   []byte
 	Width  int
 	Height int
+}
+
+type ScreenSample struct {
+	Image      *image.RGBA
+	CapturedAt time.Time
+}
+
+// ScreenSampler obtains a sampled screen image on the desktop worker.
+type ScreenSampler interface {
+	SampleScreen(context.Context, Rect, int, int) (ScreenSample, error)
 }
 type RecognizedText struct {
 	Text       string  `json:"text"`
