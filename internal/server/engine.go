@@ -205,7 +205,10 @@ func (j *job) interrupted(err error) response {
 			result.transitionErr = err
 			return response{value: result}
 		}
-		return response{value: delivered.failed(err, nil)}
+		if delivered.observationPending {
+			return response{value: delivered.failed(err, nil)}
+		}
+		return response{value: *delivered}
 	}
 	return response{err: err}
 }
@@ -336,9 +339,10 @@ type ClickArgs struct {
 	CaptureTransition *TransitionOptions `json:"capture_transition,omitempty"`
 }
 type MoveArgs struct {
-	SnapshotID string        `json:"snapshot_id"`
-	Point      desktop.Point `json:"point"`
-	Hover      int           `json:"hover_ms,omitempty"`
+	SnapshotID        string             `json:"snapshot_id"`
+	Point             desktop.Point      `json:"point"`
+	Hover             int                `json:"hover_ms,omitempty"`
+	CaptureTransition *TransitionOptions `json:"capture_transition,omitempty"`
 }
 type TypeArgs struct {
 	WindowID     string `json:"window_id"`
@@ -787,7 +791,7 @@ func click(ctx context.Context, s *state, a ClickArgs) response {
 	if err != nil || a.ObserveAfter == nil && hit == nil && transition == nil {
 		return delivered(err)
 	}
-	result := s.confirmMouseInput(hit, transition != nil)
+	result := s.confirmMouseInput(mouseObservationResult{Hit: hit, transitionPending: transition != nil, observationPending: a.ObserveAfter != nil})
 	if transition != nil {
 		result = transition.afterInput(ctx, s, result, dispatchedAt)
 	}
@@ -864,23 +868,49 @@ func move(ctx context.Context, s *state, a MoveArgs) response {
 	if err != nil {
 		return response{err: err}
 	}
+	var transition *transitionCapture
+	if a.CaptureTransition != nil {
+		transition, err = beginTransition(ctx, s.backend, snap, a.CaptureTransition)
+		if err != nil {
+			return response{err: err}
+		}
+		if err := s.validateSnapshotTarget(snap); err != nil {
+			return response{err: err}
+		}
+	}
 	if snap.Window != nil {
 		if err := s.backend.CheckPoint(*snap.Window, p, snap.CaptureMode == "screen"); err != nil {
 			return response{err: err}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return response{err: err}
+	}
 	s.snapshot = nil
+	desktop.ReportStage(ctx, "input")
+	dispatchedAt := time.Now()
 	if err := s.backend.Input(ctx, "move", desktop.Input{Point: p}); err != nil {
 		return delivered(err)
 	}
-	if a.Hover > 0 {
-		timer := time.NewTimer(time.Duration(a.Hover) * time.Millisecond)
+	hoverUntil := time.Now().Add(time.Duration(a.Hover) * time.Millisecond)
+	var result mouseObservationResult
+	if transition != nil {
+		result = s.confirmMouseInput(mouseObservationResult{transitionPending: true})
+		result = transition.afterInput(ctx, s, result, dispatchedAt)
+	}
+	if remaining := time.Until(hoverUntil); remaining > 0 {
+		timer := time.NewTimer(remaining)
 		defer timer.Stop()
 		select {
 		case <-ctx.Done():
-			return delivered(ctx.Err())
+			if transition == nil {
+				return delivered(ctx.Err())
+			}
 		case <-timer.C:
 		}
+	}
+	if transition != nil {
+		return response{value: result}
 	}
 	return delivered(nil)
 }
@@ -979,7 +1009,7 @@ func drag(ctx context.Context, s *state, a DragArgs) response {
 	if err != nil || a.ObserveAfter == nil {
 		return delivered(err)
 	}
-	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter, s.confirmMouseInput(nil, false))
+	return observeAfterMouseInput(ctx, s, snap, *a.ObserveAfter, s.confirmMouseInput(mouseObservationResult{observationPending: true}))
 }
 
 func dragDuration(path []desktop.Point, duration int) (int, error) {

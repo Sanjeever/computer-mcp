@@ -100,7 +100,7 @@ Windows 上，`computer_type` 将每个 LF、CRLF 或单独 CR 作为一次 Ente
 
 在 Windows 上，后续观察可以跟随输入目标直属的前台窗口，也可以在对话框关闭后返回所属窗口。服务会短暂等待应用处理输入。界面切换较慢时，使用 `computer_wait` 或重新观察。若同时返回 `input_delivered:true` 和 `observation_error`，输入已发送。请先取得新观察，再决定是否重复输入。
 
-在 Windows 上，给 `computer_click` 传入 `capture_transition:{}`，可以在输入前采集可见屏幕的基准帧，输入后继续采样 800 毫秒。`duration_ms` 可设为 100～1,500。`region` 默认为快照区域，可指定单个显示器内、使用整数桌面像素坐标且面积不超过 2,073,600 像素的矩形。建议裁剪到发生变化的区域。该模式可看到覆盖窗口和弹层。macOS 会在输入前返回 `unsupported_operation`。
+在 Windows 上，给 `computer_click` 或 `computer_move` 传入 `capture_transition:{}`，可以在输入前采集可见屏幕的基准帧，输入后继续采样 800 毫秒。`duration_ms` 可设为 100～1,500。`region` 默认为快照区域，可指定单个显示器内、使用整数桌面像素坐标且面积不超过 2,073,600 像素的矩形。建议裁剪到发生变化的区域。该模式可看到覆盖窗口和弹层。macOS 会在输入前返回 `unsupported_operation`。`computer_move` 在发送移动输入后立即开始采样，采样和指定的 `hover_ms` 等待均结束后返回。
 
 `transition.frames` 提供相对输入发送时刻的采样时间，单位为毫秒，并记录相对上一帧的像素变化。`change_bounds` 以缩放后图像的左上角为原点。`transition.key_frames` 给出 JPEG 内各关键帧的下标，从零开始，按从左到右、从上到下排列。采样以每秒 30 次为目标，间隔以实际时间为准。短暂闪烁可能落在两次采样之间。与 `observe_after` 一起使用时，采样结束后执行后续观察，其 JPEG 排在过渡拼图之前，可操作快照来自后续观察。`transition_error` 可与 `input_delivered:true` 及部分已采集的帧一起返回。
 

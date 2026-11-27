@@ -27,17 +27,18 @@ func (o *MouseObservation) validate(source *Snapshot) error {
 }
 
 type mouseObservationResult struct {
-	InputDelivered    bool              `json:"input_delivered"`
-	Hit               *desktop.ClickHit `json:"hit,omitempty"`
-	Observation       *Snapshot         `json:"observation,omitempty"`
-	ObservationError  *toolFailure      `json:"observation_error,omitempty"`
-	Transition        *transitionResult `json:"transition,omitempty"`
-	TransitionError   *toolFailure      `json:"transition_error,omitempty"`
-	err               error
-	suggestedRegion   *desktop.Rect
-	transitionErr     error
-	transitionImage   []byte
-	transitionPending bool
+	InputDelivered     bool              `json:"input_delivered"`
+	Hit                *desktop.ClickHit `json:"hit,omitempty"`
+	Observation        *Snapshot         `json:"observation,omitempty"`
+	ObservationError   *toolFailure      `json:"observation_error,omitempty"`
+	Transition         *transitionResult `json:"transition,omitempty"`
+	TransitionError    *toolFailure      `json:"transition_error,omitempty"`
+	err                error
+	suggestedRegion    *desktop.Rect
+	transitionErr      error
+	transitionImage    []byte
+	transitionPending  bool
+	observationPending bool
 }
 
 func (r mouseObservationResult) failed(err error, region *desktop.Rect) mouseObservationResult {
@@ -45,8 +46,9 @@ func (r mouseObservationResult) failed(err error, region *desktop.Rect) mouseObs
 	return r
 }
 
-func (s *state) confirmMouseInput(hit *desktop.ClickHit, transitionPending bool) mouseObservationResult {
-	return s.publishMouseResult(mouseObservationResult{InputDelivered: true, Hit: hit, transitionPending: transitionPending})
+func (s *state) confirmMouseInput(result mouseObservationResult) mouseObservationResult {
+	result.InputDelivered = true
+	return s.publishMouseResult(result)
 }
 
 func (s *state) publishMouseResult(result mouseObservationResult) mouseObservationResult {

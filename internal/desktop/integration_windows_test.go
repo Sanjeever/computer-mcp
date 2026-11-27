@@ -605,6 +605,15 @@ func TestNativeWindowsDrawingBatch(t *testing.T) {
 }
 
 func TestNativeWindowsClickTransition(t *testing.T) {
+	testNativeWindowsTransition(t, "computer_click")
+}
+
+func TestNativeWindowsMoveTransition(t *testing.T) {
+	testNativeWindowsTransition(t, "computer_move")
+}
+
+func testNativeWindowsTransition(t *testing.T, name string) {
+	t.Helper()
 	fixture, call := startWindowsObservationFixture(t)
 	requireFixtureActive(t, fixture)
 	var rect w.RECT
@@ -615,10 +624,22 @@ func TestNativeWindowsClickTransition(t *testing.T) {
 	region.Width = min(region.Width, 450)
 	fixtureMessage(t, fixture.Canvas, w.WM_APP, 0, 0)
 	var source windowsObservation
-	if !call("computer_observe", map[string]any{
+	observeArgs := map[string]any{
 		"window_id": fixture.Window.ID, "screenshot_only": true, "capture_mode": "screen", "region": region,
-	}, &source) {
+	}
+	if !call("computer_observe", observeArgs, &source) {
 		t.Fatal("fixture screenshot missing")
+	}
+	if name == "computer_move" {
+		var moved struct {
+			InputDelivered bool `json:"input_delivered"`
+		}
+		call("computer_move", map[string]any{
+			"snapshot_id": source.SnapshotID, "point": Point{X: float64(source.ImageWidth) / 4, Y: float64(source.ImageHeight) / 2}, "hover_ms": 100,
+		}, &moved)
+		if !moved.InputDelivered || !call("computer_observe", observeArgs, &source) {
+			t.Fatal("could not establish a starting mouse position in the fixture")
+		}
 	}
 	type frameSample struct {
 		TimeMS        float64 `json:"time_ms"`
@@ -631,11 +652,15 @@ func TestNativeWindowsClickTransition(t *testing.T) {
 			Frames []frameSample `json:"frames"`
 		} `json:"transition"`
 	}
-	if !call("computer_click", map[string]any{
+	args := map[string]any{
 		"snapshot_id": source.SnapshotID, "point": Point{X: float64(source.ImageWidth) / 2, Y: float64(source.ImageHeight) / 2},
 		"capture_transition": map[string]any{"duration_ms": 300},
-	}, &result) || !result.InputDelivered || len(result.TransitionError) != 0 {
-		t.Fatalf("click transition: %+v", result)
+	}
+	if name == "computer_move" {
+		args["hover_ms"] = 350
+	}
+	if !call(name, args, &result) || !result.InputDelivered || len(result.TransitionError) != 0 {
+		t.Fatalf("%s transition: %+v", name, result)
 	}
 	frames := result.Transition.Frames
 	if len(frames) < 2 || frames[0].TimeMS > 0 || !slices.ContainsFunc(frames[1:], func(frame frameSample) bool {

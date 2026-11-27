@@ -29,7 +29,7 @@
   "input_observation_failed": "输入已发送，后续观察失败。请先重新观察目标，再决定是否重复输入。",
   "capture_transition": "仅 Windows 支持。输入前采集基准帧，输入后继续采样可见屏幕。duration_ms 可设为 100～1500，默认 800。region 默认为快照区域，可指定单个显示器内不超过 2,073,600 像素的桌面矩形。返回帧时间线和带时间标注的 JPEG。继续操作时请使用新的观察结果。",
   "input_transition_failed": "输入已发送，过渡采集中断。请检查已返回的帧，并重新观察目标，再决定是否重复输入。",
-  "computer_move": "将鼠标移动到最新快照中的图片坐标，不点击。可选 hover_ms 在该点等待后返回，用于悬停菜单或提示；再次观察以检查结果。窗口快照要求 active=true 或 mouse_active=true，且目标点未被遮挡；桌面快照检查显示器布局。原生失败或取消导致投递结果不确定时，快照仍被消耗。",
+  "computer_move": "将鼠标移动到最新快照中的图片坐标，不点击。可选 hover_ms 在该点等待后返回，用于悬停菜单或提示；再次观察以检查结果。在 Windows 上传入 capture_transition，可采集鼠标移动前后的短时间线。窗口快照要求 active=true 或 mouse_active=true，且目标点未被遮挡；桌面快照检查显示器布局。原生失败或取消导致投递结果不确定时，快照仍被消耗。",
   "computer_type": "在激活的 window_id 当前焦点控件插入 Unicode 文本。先检查焦点，可能位于查找框或对话框。文本按应用行为插入光标位置或替换当前选区，不使用剪贴板。Windows 将 LF、CRLF 和单独 CR 分别作为一次 Enter 发送，在单行控件中可能触发提交。替换全文前须显式全选。input_delivered 表示事件已投递，不保证文本已插入。请观察结果；若未变化，先检查焦点和应用状态，再决定是否重复输入。",
   "computer_key": "向激活的 window_id 发送一组组合键。修饰键 ctrl、alt、shift、meta；普通键 a-z、0-9、enter、tab、escape、space、backspace、delete、home、end、pageup、pagedown、left、right、up、down 及 f1-f12。例如 macOS 全选为 [\"meta\",\"a\"]，Windows 为 [\"ctrl\",\"a\"]。文本导航和选区受应用及自动换行影响；剪切或删除前先核对目标选区。",
   "computer_scroll": "移动到快照中的图片坐标并按滚轮步数滚动。delta_y 正值向下，delta_x 正值向右。窗口快照要求 active=true 或 mouse_active=true，桌面快照检查显示器布局。可选 hold_keys 在本次操作期间按住，要求激活的窗口快照；例如 ctrl 可用于应用支持的缩放。结束后释放按键。",

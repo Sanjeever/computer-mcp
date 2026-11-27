@@ -73,7 +73,7 @@ macOS 的 `stdio drawing batch` 用例以两种方式发送同样的 8 笔、256
 
 Windows 测试机没有 Go 工具链时，可复制 `go test -c ./internal/desktop` 生成的桌面测试程序，以及同一份源码构建的原生服务。运行夹具前，将 `COMPUTER_MCP_TEST_BINARY` 设为服务的绝对路径。后续观察夹具通过 stdio 服务验证所属对话框、Win32 右键菜单和无标题所属弹层。
 
-`TestNativeWindowsClickTransition` 通过 stdio 点击专用 Win32 画布，检查是否采集到基准帧和输入发送后的可见像素变化，并记录实际样本数和采样跨度。
+`TestNativeWindowsClickTransition` 和 `TestNativeWindowsMoveTransition` 通过 stdio 向专用 Win32 画布发送鼠标输入，检查是否采集到基准帧和输入发送后的可见像素变化，并记录实际样本数和采样跨度。
 
 ## 发布
 
