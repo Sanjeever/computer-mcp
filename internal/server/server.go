@@ -64,8 +64,16 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 			}
 			batch.Failure = &v
 		}
-		if v, ok := r.value.(mouseObservationResult); ok && v.err != nil {
-			v.ObservationError = observationFailure(c, v.err, r.timing, v.suggestedRegion)
+		var transitionImage []byte
+		if v, ok := r.value.(mouseObservationResult); ok {
+			if v.err != nil {
+				v.ObservationError = observationFailure(c, v.err, r.timing, v.suggestedRegion)
+			}
+			if v.transitionErr != nil {
+				code, detail := errorCode(v.transitionErr)
+				v.TransitionError = &toolFailure{Code: code, Message: c.Text("input_transition_failed"), Detail: detail, Timing: r.timing}
+			}
+			transitionImage = v.transitionImage
 			r.value = v
 		}
 		if isBatch {
@@ -81,6 +89,9 @@ func register[A any](s *mcp.Server, e *Engine, c i18n.Catalog, name string, read
 		result := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}
 		if len(r.image) > 0 {
 			result.Content = append(result.Content, &mcp.ImageContent{Data: r.image, MIMEType: "image/jpeg"})
+		}
+		if len(transitionImage) > 0 {
+			result.Content = append(result.Content, &mcp.ImageContent{Data: transitionImage, MIMEType: "image/jpeg"})
 		}
 		if r.err != nil {
 			result.IsError = true

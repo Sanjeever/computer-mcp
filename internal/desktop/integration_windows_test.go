@@ -604,6 +604,48 @@ func TestNativeWindowsDrawingBatch(t *testing.T) {
 	}
 }
 
+func TestNativeWindowsClickTransition(t *testing.T) {
+	fixture, call := startWindowsObservationFixture(t)
+	requireFixtureActive(t, fixture)
+	var rect w.RECT
+	if ok, code := w.GetWindowRect(fixture.Canvas, &rect); ok == 0 {
+		t.Fatal(code)
+	}
+	region := winRect(rect)
+	region.Width = min(region.Width, 450)
+	fixtureMessage(t, fixture.Canvas, w.WM_APP, 0, 0)
+	var source windowsObservation
+	if !call("computer_observe", map[string]any{
+		"window_id": fixture.Window.ID, "screenshot_only": true, "capture_mode": "screen", "region": region,
+	}, &source) {
+		t.Fatal("fixture screenshot missing")
+	}
+	type frameSample struct {
+		TimeMS        float64 `json:"time_ms"`
+		ChangedPixels int     `json:"changed_pixels"`
+	}
+	var result struct {
+		InputDelivered  bool            `json:"input_delivered"`
+		TransitionError json.RawMessage `json:"transition_error"`
+		Transition      struct {
+			Frames []frameSample `json:"frames"`
+		} `json:"transition"`
+	}
+	if !call("computer_click", map[string]any{
+		"snapshot_id": source.SnapshotID, "point": Point{X: float64(source.ImageWidth) / 2, Y: float64(source.ImageHeight) / 2},
+		"capture_transition": map[string]any{"duration_ms": 300},
+	}, &result) || !result.InputDelivered || len(result.TransitionError) != 0 {
+		t.Fatalf("click transition: %+v", result)
+	}
+	frames := result.Transition.Frames
+	if len(frames) < 2 || frames[0].TimeMS > 0 || !slices.ContainsFunc(frames[1:], func(frame frameSample) bool {
+		return frame.TimeMS >= 0 && frame.ChangedPixels > 0
+	}) {
+		t.Fatalf("did not capture the fixture update: %+v", frames)
+	}
+	t.Logf("sampled %d frames over %.1f ms", len(frames), frames[len(frames)-1].TimeMS-frames[0].TimeMS)
+}
+
 func testNativeWindowsDrawingBatch(t *testing.T, mode string) {
 	fixture, call := startWindowsObservationFixture(t)
 	requireFixtureActive(t, fixture)

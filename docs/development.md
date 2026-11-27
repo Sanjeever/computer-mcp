@@ -37,6 +37,8 @@ Window and element IDs follow native identity to keep title edits and traversal 
 
 Window capture and screen capture are explicit choices because an unobscured window image and the visible input target can differ. OCR text from screen capture may belong to an overlapping window, so it stays separate from native controls. The Windows npm distribution has no MSIX package identity, so OCR is currently available through macOS Vision. See the [tool contract](usage.md#tools).
 
+Transition capture samples a fixed screen region on the existing desktop worker. The Windows sampler reuses the screen capture path and records time at the end of each screenshot read, before resize and encoding. These times describe sampling and may differ from compositor presentation times. Frame comparison runs on resized RGB data before JPEG encoding. A pixel counts as changed when any channel changes by at least 16. The contact sheet keeps the first and last frames and the strongest pixel changes in up to four intermediate groups.
+
 Windows element clicks use UIA bounds in physical desktop pixels. Windows 10 can report a successful UIA cache refresh after an HWND is destroyed, so resolving an element also checks its cached native handle when present. For a hit in another root window, the native backend verifies its same-process owner chain and checks that it contains the observed element's bounds. UIA hit testing matches the requested element in the control view and can follow an icon or text child to its control. The owned-popup fixture exercises a control beyond the main window, an unowned covering window, a covering control inside the popup, and a reference to the destroyed popup control.
 
 Windows follow-up checks the foreground GUI thread's menu state for native menus and the owner chain for titleless foreground popups. A screen capture stays within the verified menu bounds. The server checks menu identity and geometry again after observation and before using the menu snapshot for input.
@@ -66,6 +68,8 @@ Remove-Item Env:COMPUTER_MCP_NATIVE_TEST
 Keep the desktop idle so the fixture windows retain focus. Windows fixture setup can click its own verified edit control to acquire foreground access. macOS fixtures report missing Accessibility or Screen Recording permissions as skips. Hosted CI leaves interactive fixtures disabled and does not verify permission attribution or signed upgrades.
 
 The Windows capture fixtures check updates to the pixels of an edit control and compare window and screen capture of a dedicated WPF window. The WPF fixture uses Windows PowerShell and logs its rendering tier and DPI with the test result.
+
+`TestNativeWindowsClickTransition` clicks the dedicated Win32 canvas through stdio and checks for both the baseline and a visible pixel change after dispatch. It logs the observed sample count and time span.
 
 The macOS `stdio drawing batch` case sends the same eight strokes and 256 points through sequential `computer_drag` calls with `observe_after` and through one `computer_batch` call. It verifies order and stroke boundaries from fixture events and logs calls, JPEGs, and elapsed time after the initial observation. `TestNativeWindowsDrawingBatch` uses cropped and scaled window and screen images through the Windows stdio server. It checks independent press, drag, and release sequences, the final desktop point, and the follow-up JPEG.
 

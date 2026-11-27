@@ -100,6 +100,10 @@ Windows 上，`computer_type` 将每个 LF、CRLF 或单独 CR 作为一次 Ente
 
 在 Windows 上，后续观察可以跟随输入目标直属的前台窗口，也可以在对话框关闭后返回所属窗口。服务会短暂等待应用处理输入。界面切换较慢时，使用 `computer_wait` 或重新观察。若同时返回 `input_delivered:true` 和 `observation_error`，输入已发送。请先取得新观察，再决定是否重复输入。
 
+在 Windows 上，给 `computer_click` 传入 `capture_transition:{}`，可以在输入前采集可见屏幕的基准帧，输入后继续采样 800 毫秒。`duration_ms` 可设为 100～1,500。`region` 默认为快照区域，可指定单个显示器内、使用整数桌面像素坐标且面积不超过 2,073,600 像素的矩形。建议裁剪到发生变化的区域。该模式可看到覆盖窗口和弹层。macOS 会在输入前返回 `unsupported_operation`。
+
+`transition.frames` 提供相对输入发送时刻的采样时间，单位为毫秒，并记录相对上一帧的像素变化。`change_bounds` 以缩放后图像的左上角为原点。`transition.key_frames` 给出 JPEG 内各关键帧的下标，从零开始，按从左到右、从上到下排列。采样以每秒 30 次为目标，间隔以实际时间为准。短暂闪烁可能落在两次采样之间。与 `observe_after` 一起使用时，采样结束后执行后续观察，其 JPEG 排在过渡拼图之前，可操作快照来自后续观察。`transition_error` 可与 `input_delivered:true` 及部分已采集的帧一起返回。
+
 Windows 能确认可见菜单归属时，后续观察以 `window.menu:true` 和 `mouse_active:true` 标识菜单。使用 `observe_after:{"screenshot":true}` 会返回菜单矩形范围内的屏幕截图，并标明 `capture_mode:"screen"`。用这张图和快照点击菜单。使用 `observe_after:{}` 会读取菜单的无障碍元素。菜单仍打开时，可将最近一次菜单观察的 `window_id` 传给 `computer_observe` 刷新。菜单归属无法验证但能取得边界时，`observation_error.suggested_region` 提供桌面裁剪范围。可将它作为 `region` 与 `desktop:true` 一起传入，单独观察该区域。
 
 在 Windows 上，使用 `element_id` 点击观察到的弹层控件，控件也可位于主窗口之外。服务在发送鼠标点击前验证弹层归属，并确认实际命中请求的控件。若弹层切换时返回 `stale_snapshot`，请重新观察窗口并使用新引用。对于缺少可验证元素的可见弹层，可观察其周围的小范围桌面区域，并使用该图片的坐标。

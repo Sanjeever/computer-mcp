@@ -41,6 +41,8 @@ Windows 元素点击使用 UIA 报告的桌面物理像素坐标。Windows 10 �
 
 Windows 后续观察通过前台 GUI 线程的菜单状态识别原生菜单，通过 owner 链验证无标题的前台弹层。屏幕截图限制在已验证的菜单边界内。服务在观察后和使用菜单快照输入前，再次验证菜单身份和几何。
 
+过渡采集在现有桌面工作线程上采样固定的屏幕区域。Windows 采样复用屏幕截图路径，在每次读取截图结束后、缩放和编码之前记录时间。该时间描述采样时刻，可能与合成器呈现画面的时间不同。帧比较使用缩放后的 RGB 数据，先于 JPEG 编码。任一颜色通道的变化达到 16 时，该像素计为变化。拼图保留首尾帧，并从最多四组中间帧中各选像素变化最多的一帧。
+
 ## 验证
 
 [CI](../.github/workflows/ci.yml) 在 Linux 上打包一次启动器，保留入口文件的可执行权限。两个原生任务安装并验证这一份 tarball，再各自上传平台包。macOS 直接运行 Go 测试或 vet 时，沿用 CI 中的部署环境变量。[`build:native`](../scripts/native.ts) 会为原生构建设置部署目标。
@@ -70,6 +72,8 @@ Windows 截图夹具验证编辑控件的像素更新，并对照专用 WPF 窗�
 macOS 的 `stdio drawing batch` 用例以两种方式发送同样的 8 笔、256 个路径点。一种是逐笔调用带 `observe_after` 的 `computer_drag`，另一种是调用一次 `computer_batch`。用例读取夹具事件验证笔画顺序和独立性，并记录首次观察之后的调用数、JPEG 数和耗时。`TestNativeWindowsDrawingBatch` 通过 Windows stdio 服务使用裁剪和缩放后的窗口及屏幕截图，检查每笔独立的按下、拖拽和释放序列、最终桌面坐标以及后续 JPEG。
 
 Windows 测试机没有 Go 工具链时，可复制 `go test -c ./internal/desktop` 生成的桌面测试程序，以及同一份源码构建的原生服务。运行夹具前，将 `COMPUTER_MCP_TEST_BINARY` 设为服务的绝对路径。后续观察夹具通过 stdio 服务验证所属对话框、Win32 右键菜单和无标题所属弹层。
+
+`TestNativeWindowsClickTransition` 通过 stdio 点击专用 Win32 画布，检查是否采集到基准帧和输入发送后的可见像素变化，并记录实际样本数和采样跨度。
 
 ## 发布
 

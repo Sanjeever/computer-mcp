@@ -60,6 +60,9 @@ func (j *job) withTiming(r response) response {
 	err := r.err
 	if result, ok := r.value.(mouseObservationResult); ok {
 		err = result.err
+		if err == nil {
+			err = result.transitionErr
+		}
 	}
 	if result, ok := r.value.(batchResult); ok && err == nil {
 		err = result.observationErr
